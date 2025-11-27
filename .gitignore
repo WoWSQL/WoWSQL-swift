@@ -1,0 +1,44 @@
+# Publishing guides and internal documentation (don't push to SDK repos)
+PUBLISHING_GUIDE.md
+PUBLISHING_TO_*.md
+FIX_*.md
+CHECK_*.md
+FIND_*.md
+NAMESPACE_*.md
+*_ERROR.md
+verify-credentials.ps1
+upload-to-central-portal.ps1
+
+# Xcode
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+*.xcworkspace/*
+!*.xcworkspace/contents.xcworkspacedata
+.DS_Store
+build/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+*.xcodeproj
+
+# CocoaPods
+Pods/
+
+# Carthage
+Carthage/Build/
+
+# Mac
+.DS_Store
+
