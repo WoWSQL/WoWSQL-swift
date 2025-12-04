@@ -269,6 +269,47 @@ do {
 
 ## 📚 Documentation
 
+## 🔑 Unified Authentication
+
+**✨ One Project = One Set of Keys for ALL Operations**
+
+WOWSQL uses **unified authentication** - the same API keys work for both database operations AND authentication operations.
+
+### Key Types
+
+1. **Anonymous Key** (`wowsql_anon_...`) ✨ **Unified Key**
+   - Used for: 
+     - ✅ Client-side auth operations (signup, login, OAuth)
+     - ✅ Public/client-side database operations with limited permissions
+   - **Safe to expose** in frontend code (browser, mobile apps)
+
+2. **Service Role Key** (`wowsql_service_...`) ✨ **Unified Key**
+   - Used for:
+     - ✅ Server-side auth operations (admin, full access)
+     - ✅ Server-side database operations (full access, bypass RLS)
+   - **NEVER expose** in frontend code - server-side only!
+
+### Usage Example
+
+```swift
+import WOWSQL
+
+// Database operations
+let dbClient = WOWSQLClient(
+    projectUrl: "https://your-project.wowsql.com",
+    apiKey: "wowsql_anon_..."  // Anonymous Key
+)
+
+// Authentication operations - SAME KEY!
+let authConfig = ProjectAuthConfig(
+    projectUrl: "https://your-project.wowsql.com",
+    apiKey: "wowsql_anon_..."  // Same Anonymous Key
+)
+let authClient = ProjectAuthClient(config: authConfig)
+```
+
+**Note:** The `publicApiKey` parameter is deprecated but still works for backward compatibility. Use `apiKey` instead.
+
 Full documentation available at: https://wowsql.com/docs/swift
 
 ## 📄 License

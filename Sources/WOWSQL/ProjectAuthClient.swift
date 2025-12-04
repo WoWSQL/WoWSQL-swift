@@ -79,8 +79,11 @@ public class ProjectAuthClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         
-        if let apiKey = config.publicApiKey {
-            request.setValue(apiKey, forHTTPHeaderField: "X-Wow-Public-Key")
+        // UNIFIED AUTHENTICATION: Use apiKey (new) or publicApiKey (deprecated) for backward compatibility
+        let unifiedKey = config.apiKey ?? config.publicApiKey
+        if let apiKey = unifiedKey {
+            // UNIFIED AUTHENTICATION: Use Authorization header (same as database operations)
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
         
         let (data, response) = try await session.data(for: request)
@@ -198,8 +201,11 @@ public class ProjectAuthClient {
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        if let apiKey = config.publicApiKey {
-            request.setValue(apiKey, forHTTPHeaderField: "X-Wow-Public-Key")
+        // UNIFIED AUTHENTICATION: Use apiKey (new) or publicApiKey (deprecated) for backward compatibility
+        let unifiedKey = config.apiKey ?? config.publicApiKey
+        if let apiKey = unifiedKey {
+            // UNIFIED AUTHENTICATION: Use Authorization header (same as database operations)
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
         
         if let body = body {

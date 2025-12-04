@@ -269,6 +269,11 @@ public struct ProjectAuthConfig {
     public let baseDomain: String
     public let secure: Bool
     public let timeoutSeconds: TimeInterval
+    /// Unified API key - Anonymous Key (wowsql_anon_...) for client-side,
+    /// or Service Role Key (wowsql_service_...) for server-side.
+    /// UNIFIED AUTHENTICATION: Same key works for both auth and database operations.
+    public let apiKey: String?
+    /// Deprecated: Use apiKey instead. Kept for backward compatibility.
     public let publicApiKey: String?
     
     public init(
@@ -276,13 +281,16 @@ public struct ProjectAuthConfig {
         baseDomain: String = "wowsql.com",
         secure: Bool = true,
         timeoutSeconds: TimeInterval = 30,
+        apiKey: String? = nil,
         publicApiKey: String? = nil
     ) {
         self.projectUrl = projectUrl
         self.baseDomain = baseDomain
         self.secure = secure
         self.timeoutSeconds = timeoutSeconds
-        self.publicApiKey = publicApiKey
+        // UNIFIED AUTHENTICATION: Support both apiKey (new) and publicApiKey (deprecated)
+        self.apiKey = apiKey ?? publicApiKey
+        self.publicApiKey = apiKey ?? publicApiKey
     }
 }
 
