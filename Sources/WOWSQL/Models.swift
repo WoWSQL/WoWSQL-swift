@@ -181,6 +181,11 @@ public enum FilterOperator: String, Codable {
     case lte = "lte"
     case like = "like"
     case isNull = "is"
+    case `in` = "in"
+    case notIn = "not_in"
+    case between = "between"
+    case notBetween = "not_between"
+    case isNot = "is_not"
 }
 
 /// Sort direction
@@ -194,11 +199,37 @@ public struct FilterExpression: Codable {
     public let column: String
     public let `operator`: FilterOperator
     public let value: AnyCodable?
+    public let logicalOp: String? // "AND" or "OR"
     
-    public init(column: String, operator op: FilterOperator, value: AnyCodable?) {
+    public init(column: String, operator op: FilterOperator, value: AnyCodable?, logicalOp: String? = "AND") {
         self.column = column
         self.`operator` = op
         self.value = value
+        self.logicalOp = logicalOp
+    }
+}
+
+/// HAVING clause filter for aggregated results
+public struct HavingFilter: Codable {
+    public let column: String
+    public let `operator`: String // "eq", "neq", "gt", "gte", "lt", "lte"
+    public let value: AnyCodable
+    
+    public init(column: String, operator op: String, value: AnyCodable) {
+        self.column = column
+        self.`operator` = op
+        self.value = value
+    }
+}
+
+/// Order by item for multiple column sorting
+public struct OrderByItem: Codable {
+    public let column: String
+    public let direction: SortDirection
+    
+    public init(column: String, direction: SortDirection) {
+        self.column = column
+        self.direction = direction
     }
 }
 
