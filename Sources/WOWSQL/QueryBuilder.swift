@@ -34,6 +34,13 @@ public class QueryBuilder {
         return self
     }
     
+    /// Add a filter condition (generic method).
+    @discardableResult
+    public func filter(_ column: String, _ op: FilterOperator, _ value: AnyCodable, _ logicalOp: String = "AND") -> QueryBuilder {
+        filters.append(FilterExpression(column: column, operator: op, value: value, logicalOp: logicalOp))
+        return self
+    }
+    
     /// Add equality filter
     @discardableResult
     public func eq(_ column: String, _ value: AnyCodable) -> QueryBuilder {
@@ -87,6 +94,13 @@ public class QueryBuilder {
     @discardableResult
     public func isNull(_ column: String) -> QueryBuilder {
         filters.append(FilterExpression(column: column, operator: .isNull, value: nil, logicalOp: "AND"))
+        return self
+    }
+
+    /// Add IS NOT NULL filter
+    @discardableResult
+    public func isNotNull(_ column: String) -> QueryBuilder {
+        filters.append(FilterExpression(column: column, operator: .isNot, value: nil, logicalOp: "AND"))
         return self
     }
 
@@ -154,6 +168,12 @@ public class QueryBuilder {
         return self
     }
     
+    /// Order results by column (alias for orderBy, backward compatibility).
+    @discardableResult
+    public func order(_ column: String, _ direction: SortDirection = .asc) -> QueryBuilder {
+        return orderBy(column, direction)
+    }
+    
     /// Set limit
     @discardableResult
     public func limit(_ value: Int) -> QueryBuilder {
@@ -208,6 +228,11 @@ public class QueryBuilder {
         }
         
         return QueryResponse(data: [], count: 0)
+    }
+
+    /// Get query results (alias for execute)
+    public func get<T: Codable>() async throws -> QueryResponse<T> {
+        return try await execute()
     }
     
     /// Get first result

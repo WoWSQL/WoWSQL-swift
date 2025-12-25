@@ -166,6 +166,89 @@ public class ProjectAuthClient {
         )
     }
     
+    /// Send OTP code to user's email.
+    /// Supports login, signup, and password_reset purposes.
+    public func sendOtp(email: String, purpose: String = "login") async throws -> [String: AnyCodable] {
+        guard ["login", "signup", "password_reset"].contains(purpose) else {
+            throw WOWSQLException("Purpose must be 'login', 'signup', or 'password_reset'")
+        }
+        
+        let url = buildAuthUrl("/otp/send")
+        let body: [String: AnyCodable] = [
+            "email": AnyCodable(email),
+            "purpose": AnyCodable(purpose)
+        ]
+        return try await executeRequest(url: url, method: "POST", body: body)
+    }
+    
+    /// Verify OTP and complete authentication.
+    /// For signup: Creates new user if doesn't exist
+    /// For login: Authenticates existing user
+    /// For password_reset: Updates password if newPassword provided
+    public func verifyOtp(email: String, otp: String, purpose: String = "login", newPassword: String? = nil) async throws -> Any {
+        guard ["login", "signup", "password_reset"].contains(purpose) else {
+            throw WOWSQLException("Purpose must be 'login', 'signup', or 'password_reset'")
+        }
+        
+        if purpose == "password_reset" && (newPassword == nil || newPassword!.isEmpty) {
+            throw WOWSQLException("newPassword is required for password_reset purpose")
+        }
+        
+        let url = buildAuthUrl("/otp/verify")
+        var body: [String: AnyCodable] = [
+            "email": AnyCodable(email),
+            "otp": AnyCodable(otp),
+            "purpose": AnyCodable(purpose)
+        ]
+        
+        if let newPassword = newPassword {
+            body["new_password"] = AnyCodable(newPassword)
+        }
+        
+        let response: [String: AnyCodable] = try await executeRequest(url: url, method: "POST", body: body)
+        
+        if purpose == "password_reset" {
+            return response
+        }
+        
+        let session = try parseSession(from: response)
+        persistSession(session)
+        
+        let user = try? parseUser(from: response["user"]?.value)
+        return AuthResult(user: user, session: session)
+    }
+    
+    /// Send magic link to user's email.
+    /// Supports login, signup, and email_verification purposes.
+    public func sendMagicLink(email: String, purpose: String = "login") async throws -> [String: AnyCodable] {
+        guard ["login", "signup", "email_verification"].contains(purpose) else {
+            throw WOWSQLException("Purpose must be 'login', 'signup', or 'email_verification'")
+        }
+        
+        let url = buildAuthUrl("/magic-link/send")
+        let body: [String: AnyCodable] = [
+            "email": AnyCodable(email),
+            "purpose": AnyCodable(purpose)
+        ]
+        return try await executeRequest(url: url, method: "POST", body: body)
+    }
+    
+    /// Verify email using token (from magic link or OTP verification).
+    /// Marks email as verified and sends welcome email.
+    public func verifyEmail(token: String) async throws -> [String: AnyCodable] {
+        let url = buildAuthUrl("/verify-email")
+        let body: [String: AnyCodable] = ["token": AnyCodable(token)]
+        return try await executeRequest(url: url, method: "POST", body: body)
+    }
+    
+    /// Resend verification email.
+    /// Always returns success to prevent email enumeration.
+    public func resendVerification(email: String) async throws -> [String: AnyCodable] {
+        let url = buildAuthUrl("/resend-verification")
+        let body: [String: AnyCodable] = ["email": AnyCodable(email)]
+        return try await executeRequest(url: url, method: "POST", body: body)
+    }
+    
     // MARK: - Private Methods
     
     private func buildAuthUrl(_ path: String) -> URL {

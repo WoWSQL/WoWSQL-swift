@@ -5,6 +5,18 @@ import PackageDescription
 
 let package = Package(
     name: "WOWSQL",
+    version: "1.4.0",
+    license: {
+        name: "MIT",
+        text: "Copyright (c) 2025 WowSQL"
+    },
+    authors: [
+        { name: "WowSQL Team", email: "support@wowsql.com" }
+    ],
+    homepage: "https://wowsql.com",
+    documentation: "https://wowsql.com/docs",
+    issueTracker: "https://github.com/wowsql/wowsql/issues",
+    swiftLanguageVersions: [.v5],
     platforms: [
         .iOS(.v13),
         .macOS(.v10_15),
