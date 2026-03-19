@@ -11,46 +11,74 @@ import Foundation
 import FoundationNetworking
 #endif
 
-/// S3 Storage client for WOWSQL
+/// PostgreSQL-native storage client for WOWSQL.
+///
+/// Files are stored as BYTEA inside each project's `storage` schema.
+///
+/// Example:
+/// ```swift
+/// let storage = WOWSQLStorage(
+///     projectUrl: "https://myproject.wowsql.com",
+///     apiKey: "wowsql_anon_..."
+/// )
+/// let bucket = try await storage.createBucket("avatars", public: true)
+/// let files = try await storage.listFiles(bucketName: "avatars")
+/// ```
 public class WOWSQLStorage {
-    private let baseUrl: String
+    internal let baseUrl: String
+    internal let projectSlug: String
     private let apiKey: String
     private let timeout: TimeInterval
     private let session: URLSession
-    private let autoCheckQuota: Bool
-    private let projectSlug: String
     
-    /// Initialize the storage client
+    /// Initialize the storage client.
+    ///
     /// - Parameters:
-    ///   - projectUrl: Your project URL or slug
-    ///   - apiKey: Your API key
+    ///   - projectUrl: Project subdomain or full URL
+    ///   - apiKey: API key for authentication
+    ///   - projectSlug: Explicit slug (used with `baseUrl`)
+    ///   - baseUrl: Explicit base URL (used with `projectSlug`)
+    ///   - baseDomain: Base domain (default: `"wowsql.com"`)
+    ///   - secure: Use HTTPS (default: `true`)
     ///   - timeout: Request timeout in seconds (default: 60)
-    ///   - autoCheckQuota: Automatically check quota before uploads (default: true)
+    ///   - verifySsl: Verify SSL (default: `true`)
     public init(
-        projectUrl: String,
-        apiKey: String,
+        projectUrl: String = "",
+        apiKey: String = "",
+        projectSlug: String? = nil,
+        baseUrl: String? = nil,
+        baseDomain: String = "wowsql.com",
+        secure: Bool = true,
         timeout: TimeInterval = 60,
-        autoCheckQuota: Bool = true
+        verifySsl: Bool = true
     ) {
-        var url = projectUrl.trimmingCharacters(in: .whitespaces)
-        if url.hasSuffix("/") {
-            url = String(url.dropLast())
-        }
-        
-        // Extract project slug from URL
-        var slug = url
-        if let urlObj = URL(string: url) {
-            slug = urlObj.host ?? url
-            if slug.contains(".") {
-                slug = String(slug.split(separator: ".").first ?? "")
+        if let slug = projectSlug, let base = baseUrl {
+            self.baseUrl = base.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            self.projectSlug = slug
+        } else {
+            let url = projectUrl.trimmingCharacters(in: .whitespaces)
+            if url.hasPrefix("http://") || url.hasPrefix("https://") {
+                var base = url.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                if base.contains("/api") {
+                    base = base.components(separatedBy: "/api").first ?? base
+                }
+                self.baseUrl = base
+            } else {
+                let proto = secure ? "https" : "http"
+                if url.contains(".\(baseDomain)") || url.hasSuffix(baseDomain) {
+                    self.baseUrl = "\(proto)://\(url)"
+                } else {
+                    self.baseUrl = "\(proto)://\(url).\(baseDomain)"
+                }
             }
+            self.projectSlug = url
+                .components(separatedBy: ".").first?
+                .replacingOccurrences(of: "https://", with: "")
+                .replacingOccurrences(of: "http://", with: "") ?? url
         }
         
-        self.baseUrl = "https://api.wowsql.com" // Default API base
-        self.projectSlug = slug
         self.apiKey = apiKey
         self.timeout = timeout
-        self.autoCheckQuota = autoCheckQuota
         
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = timeout
@@ -58,66 +86,92 @@ public class WOWSQLStorage {
         self.session = URLSession(configuration: config)
     }
     
-    /// Get storage quota information
-    public func getQuota(forceRefresh: Bool = false) async throws -> StorageQuota {
-        let url = URL(string: "\(baseUrl)/api/v1/storage/s3/projects/\(projectSlug)/quota")!
-        return try await executeRequest(url: url, method: "GET")
+    // MARK: - Buckets
+    
+    /// Create a new storage bucket.
+    public func createBucket(
+        _ name: String,
+        public isPublic: Bool = false,
+        fileSizeLimit: Int? = nil,
+        allowedMimeTypes: [String]? = nil
+    ) async throws -> StorageBucket {
+        var body: [String: AnyCodable] = [
+            "name": AnyCodable(name),
+            "public": AnyCodable(isPublic)
+        ]
+        if let limit = fileSizeLimit { body["file_size_limit"] = AnyCodable(limit) }
+        if let types = allowedMimeTypes { body["allowed_mime_types"] = AnyCodable(types) }
+        
+        let data = try await executeJsonRequest(
+            path: "/api/v1/storage/projects/\(projectSlug)/buckets",
+            method: "POST",
+            body: body
+        )
+        return StorageBucket(data: data)
     }
     
-    /// Check if upload is allowed based on quota
-    public func checkUploadAllowed(fileSizeBytes: Int64) async throws -> (allowed: Bool, message: String) {
-        let quota = try await getQuota(forceRefresh: true)
-        let fileSizeGb = Double(fileSizeBytes) / (1024.0 * 1024.0 * 1024.0)
+    /// List all buckets in the project.
+    public func listBuckets() async throws -> [StorageBucket] {
+        let url = self.buildUrl("/api/v1/storage/projects/\(projectSlug)/buckets")
+        let request = try buildRequest(url: url, method: "GET")
+        let (data, response) = try await session.data(for: request)
+        try checkResponse(response: response, data: data)
         
-        if fileSizeGb > quota.storageAvailableGb {
-            return (false, "Storage limit exceeded! File size: \(String(format: "%.4f", fileSizeGb)) GB, Available: \(String(format: "%.4f", quota.storageAvailableGb)) GB. Upgrade your plan to get more storage.")
+        guard let array = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            return []
         }
-        
-        return (true, "Upload allowed. \(String(format: "%.4f", quota.storageAvailableGb)) GB available.")
+        return array.map { StorageBucket(data: $0) }
     }
     
-    /// Upload file from file path
-    public func uploadFromPath(
-        filePath: String,
-        fileKey: String? = nil,
-        folder: String? = nil,
-        contentType: String? = nil,
-        checkQuota: Bool? = nil
-    ) async throws -> FileUploadResult {
-        guard let fileData = try? Data(contentsOf: URL(fileURLWithPath: filePath)) else {
-            throw StorageException("File not found: \(filePath)")
-        }
-        
-        let key = fileKey ?? URL(fileURLWithPath: filePath).lastPathComponent
-        return try await uploadBytes(fileData, key: key, folder: folder, contentType: contentType, checkQuota: checkQuota)
+    /// Get a specific bucket by name.
+    public func getBucket(_ name: String) async throws -> StorageBucket {
+        let data = try await executeJsonRequest(
+            path: "/api/v1/storage/projects/\(projectSlug)/buckets/\(name)",
+            method: "GET"
+        )
+        return StorageBucket(data: data)
     }
     
-    /// Upload bytes to storage
-    public func uploadBytes(
-        _ bytes: Data,
-        key: String,
-        folder: String? = nil,
-        contentType: String? = nil,
-        checkQuota: Bool? = nil
-    ) async throws -> FileUploadResult {
-        // Check quota if enabled
-        let shouldCheck = checkQuota ?? autoCheckQuota
-        if shouldCheck {
-            let (allowed, message) = try await checkUploadAllowed(fileSizeBytes: Int64(bytes.count))
-            if !allowed {
-                let quota = try await getQuota()
-                throw StorageLimitExceededException(
-                    message,
-                    requiredBytes: Int64(bytes.count),
-                    availableBytes: quota.storageAvailableBytes
-                )
-            }
+    /// Update bucket settings.
+    public func updateBucket(_ name: String, settings: [String: Any]) async throws -> StorageBucket {
+        let body = settings.mapValues { AnyCodable($0) }
+        let data = try await executeJsonRequest(
+            path: "/api/v1/storage/projects/\(projectSlug)/buckets/\(name)",
+            method: "PATCH",
+            body: body
+        )
+        return StorageBucket(data: data)
+    }
+    
+    /// Delete a bucket and all its files.
+    public func deleteBucket(_ name: String) async throws -> [String: Any] {
+        return try await executeJsonRequest(
+            path: "/api/v1/storage/projects/\(projectSlug)/buckets/\(name)",
+            method: "DELETE"
+        )
+    }
+    
+    // MARK: - Files
+    
+    /// Upload file data to a bucket.
+    public func upload(
+        bucketName: String,
+        fileData: Data,
+        path filePath: String? = nil,
+        fileName: String? = nil
+    ) async throws -> StorageFile {
+        let name = fileName ?? filePath?.components(separatedBy: "/").last ?? "file"
+        var folder = ""
+        if let filePath = filePath, filePath.contains("/") {
+            folder = filePath.components(separatedBy: "/").dropLast().joined(separator: "/")
         }
         
-        var urlString = "\(baseUrl)/api/v1/storage/s3/projects/\(projectSlug)/upload"
-        if let folder = folder {
-            urlString += "?folder=\(folder.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? folder)"
+        var urlString = "\(baseUrl)/api/v1/storage/projects/\(projectSlug)/buckets/\(bucketName)/files"
+        if !folder.isEmpty {
+            let encoded = folder.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? folder
+            urlString += "?folder=\(encoded)"
         }
+        
         let url = URL(string: urlString)!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -128,24 +182,9 @@ public class WOWSQLStorage {
         
         var body = Data()
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"key\"\r\n\r\n".data(using: .utf8)!)
-        body.append(key.data(using: .utf8)!)
-        body.append("\r\n".data(using: .utf8)!)
-        
-        if let contentType = contentType {
-            body.append("--\(boundary)\r\n".data(using: .utf8)!)
-            body.append("Content-Disposition: form-data; name=\"content_type\"\r\n\r\n".data(using: .utf8)!)
-            body.append(contentType.data(using: .utf8)!)
-            body.append("\r\n".data(using: .utf8)!)
-        }
-        
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(key.split(separator: "/").last ?? "file")\"\r\n".data(using: .utf8)!)
-        if let contentType = contentType {
-            body.append("Content-Type: \(contentType)\r\n".data(using: .utf8)!)
-        }
-        body.append("\r\n".data(using: .utf8)!)
-        body.append(bytes)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(name)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: application/octet-stream\r\n\r\n".data(using: .utf8)!)
+        body.append(fileData)
         body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
         
         request.httpBody = body
@@ -153,105 +192,136 @@ public class WOWSQLStorage {
         let (data, response) = try await session.data(for: request)
         try checkResponse(response: response, data: data)
         
-        return try JSONDecoder().decode(FileUploadResult.self, from: data)
+        guard let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw StorageError("Invalid upload response")
+        }
+        return StorageFile(data: dict)
     }
     
-    /// List files with optional prefix
-    public func listFiles(prefix: String? = nil, maxKeys: Int = 1000) async throws -> [StorageFile] {
-        var urlString = "\(baseUrl)/api/v1/storage/s3/projects/\(projectSlug)/files?max_keys=\(maxKeys)"
+    /// Upload a file from a local filesystem path.
+    public func uploadFromPath(
+        filePath: String,
+        bucketName: String = "default",
+        path remotePath: String? = nil
+    ) async throws -> StorageFile {
+        let fileUrl = URL(fileURLWithPath: filePath)
+        guard let fileData = try? Data(contentsOf: fileUrl) else {
+            throw StorageError("File not found: \(filePath)")
+        }
+        let fileName = fileUrl.lastPathComponent
+        return try await upload(
+            bucketName: bucketName,
+            fileData: fileData,
+            path: remotePath ?? fileName,
+            fileName: fileName
+        )
+    }
+    
+    /// List files in a bucket.
+    public func listFiles(
+        bucketName: String,
+        prefix: String? = nil,
+        limit: Int = 100,
+        offset: Int = 0
+    ) async throws -> [StorageFile] {
+        var urlString = "\(baseUrl)/api/v1/storage/projects/\(projectSlug)/buckets/\(bucketName)/files?limit=\(limit)&offset=\(offset)"
         if let prefix = prefix {
             let encoded = prefix.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? prefix
             urlString += "&prefix=\(encoded)"
         }
         
         let url = URL(string: urlString)!
-        let response: [String: AnyCodable] = try await executeRequest(url: url, method: "GET")
+        let request = try buildRequest(url: url, method: "GET")
+        let (data, response) = try await session.data(for: request)
+        try checkResponse(response: response, data: data)
         
-        if let filesArray = response["files"]?.value as? [[String: Any]] {
-            let jsonData = try JSONSerialization.data(withJSONObject: filesArray)
-            return try JSONDecoder().decode([StorageFile].self, from: jsonData)
+        let parsed = try JSONSerialization.jsonObject(with: data)
+        let items: [[String: Any]]
+        if let array = parsed as? [[String: Any]] {
+            items = array
+        } else if let dict = parsed as? [String: Any] {
+            items = dict["files"] as? [[String: Any]] ?? dict["data"] as? [[String: Any]] ?? []
+        } else {
+            items = []
         }
-        
-        return []
+        return items.map { StorageFile(data: $0) }
     }
     
-    /// Get file URL (presigned URL)
-    public func getFileUrl(key: String, expiresIn: Int64 = 3600) async throws -> [String: AnyCodable] {
-        let encoded = key.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? key
-        let urlString = "\(baseUrl)/api/v1/storage/s3/projects/\(projectSlug)/files/\(encoded)/url?expires_in=\(expiresIn)"
-        let url = URL(string: urlString)!
-        return try await executeRequest(url: url, method: "GET")
+    /// Download a file and return its binary contents.
+    public func download(bucketName: String, filePath: String) async throws -> Data {
+        let url = buildUrl("/api/v1/storage/projects/\(projectSlug)/files/\(bucketName)/\(filePath)")
+        let request = try buildRequest(url: url, method: "GET")
+        let (data, response) = try await session.data(for: request)
+        try checkResponse(response: response, data: data)
+        return data
     }
     
-    /// Get presigned URL for file operations
-    public func getPresignedUrl(key: String, expiresIn: Int64 = 3600, operation: String = "get_object") async throws -> String {
-        let url = URL(string: "\(baseUrl)/api/v1/storage/s3/projects/\(projectSlug)/presigned-url")!
-        let body: [String: AnyCodable] = [
-            "file_key": AnyCodable(key),
-            "expires_in": AnyCodable(expiresIn),
-            "operation": AnyCodable(operation)
-        ]
-        
-        let response: [String: AnyCodable] = try await executeRequest(url: url, method: "POST", body: body)
-        
-        guard let downloadUrl = response["url"]?.value as? String else {
-            throw StorageException("Invalid presigned URL response")
-        }
-        
-        return downloadUrl
+    /// Download a file and save it to a local path.
+    public func downloadToFile(bucketName: String, filePath: String, localPath: String) async throws -> String {
+        let data = try await download(bucketName: bucketName, filePath: filePath)
+        let localUrl = URL(fileURLWithPath: localPath)
+        let dir = localUrl.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try data.write(to: localUrl)
+        return localPath
     }
     
-    /// Download file (alias for getPresignedUrl)
-    public func download(key: String, expiresIn: Int64 = 3600) async throws -> String {
-        return try await getPresignedUrl(key: key, expiresIn: expiresIn, operation: "get_object")
+    /// Delete a file from a bucket.
+    public func deleteFile(bucketName: String, filePath: String) async throws -> [String: Any] {
+        return try await executeJsonRequest(
+            path: "/api/v1/storage/projects/\(projectSlug)/files/\(bucketName)/\(filePath)",
+            method: "DELETE"
+        )
     }
     
-    /// Get storage information
-    public func getStorageInfo() async throws -> [String: AnyCodable] {
-        let url = URL(string: "\(baseUrl)/api/v1/storage/s3/projects/\(projectSlug)/info")!
-        return try await executeRequest(url: url, method: "GET")
+    // MARK: - Utilities
+    
+    /// Get the public URL for a file in a public bucket.
+    public func getPublicUrl(bucketName: String, filePath: String) -> String {
+        return "\(baseUrl)/api/v1/storage/projects/\(projectSlug)/files/\(bucketName)/\(filePath)"
     }
     
-    /// Provision S3 storage for the project
-    public func provisionStorage(region: String = "us-east-1") async throws -> [String: AnyCodable] {
-        let url = URL(string: "\(baseUrl)/api/v1/storage/s3/projects/\(projectSlug)/provision")!
-        let body: [String: AnyCodable] = ["region": AnyCodable(region)]
-        return try await executeRequest(url: url, method: "POST", body: body)
+    /// Get storage statistics for the project.
+    public func getStats() async throws -> StorageQuota {
+        let data = try await executeJsonRequest(
+            path: "/api/v1/storage/projects/\(projectSlug)/stats",
+            method: "GET"
+        )
+        return StorageQuota(data: data)
     }
     
-    /// Get available S3 regions
-    public func getAvailableRegions() async throws -> [[String: AnyCodable]] {
-        let url = URL(string: "\(baseUrl)/api/v1/storage/s3/regions")!
-        let response: [String: AnyCodable] = try await executeRequest(url: url, method: "GET")
-        
-        if let regionsArray = response["regions"]?.value as? [[String: Any]] {
-            return regionsArray.map { region in
-                region.mapValues { AnyCodable($0) }
-            }
-        }
-        
-        return []
+    /// Get storage quota (alias for getStats).
+    public func getQuota(forceRefresh: Bool = false) async throws -> StorageQuota {
+        return try await getStats()
     }
     
-    /// Delete a file
-    public func deleteFile(key: String) async throws {
-        let encoded = key.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? key
-        let url = URL(string: "\(baseUrl)/api/v1/storage/s3/projects/\(projectSlug)/files/\(encoded)")!
-        let _: [String: AnyCodable] = try await executeRequest(url: url, method: "DELETE")
+    /// Close the HTTP session.
+    public func close() {
+        session.invalidateAndCancel()
     }
     
-    // MARK: - Private Methods
+    // MARK: - Private Helpers
     
-    private func executeRequest<T: Codable>(
-        url: URL,
-        method: String,
-        body: [String: AnyCodable]? = nil
-    ) async throws -> T {
+    private func buildUrl(_ path: String) -> URL {
+        return URL(string: "\(baseUrl)\(path)")!
+    }
+    
+    private func buildRequest(url: URL, method: String) throws -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        return request
+    }
+    
+    private func executeJsonRequest(
+        path: String,
+        method: String,
+        body: [String: AnyCodable]? = nil
+    ) async throws -> [String: Any] {
+        let url = buildUrl(path)
+        var request = try buildRequest(url: url, method: method)
         
         if let body = body {
             let jsonData = try JSONEncoder().encode(body)
@@ -261,40 +331,37 @@ public class WOWSQLStorage {
         let (data, response) = try await session.data(for: request)
         try checkResponse(response: response, data: data)
         
-        return try JSONDecoder().decode(T.self, from: data)
+        if data.isEmpty { return [:] }
+        guard let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return [:]
+        }
+        return dict
     }
     
     private func checkResponse(response: URLResponse, data: Data) throws {
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw NetworkException("Invalid response type")
+            throw NetworkError("Invalid response type")
         }
         
         if !(200...299).contains(httpResponse.statusCode) {
-            let errorResponse = try? JSONDecoder().decode([String: AnyCodable].self, from: data)
-            let message = errorResponse?["error"]?.value as? String
-                ?? errorResponse?["message"]?.value as? String
-                ?? errorResponse?["detail"]?.value as? String
+            let errorDict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let message = errorDict?["detail"] as? String
+                ?? errorDict?["error"] as? String
+                ?? errorDict?["message"] as? String
                 ?? "Request failed with status \(httpResponse.statusCode)"
-            
-            let errorDict = errorResponse?.mapValues { $0.value } as? [String: Any]
             
             switch httpResponse.statusCode {
             case 401, 403:
-                throw AuthenticationException(message, statusCode: httpResponse.statusCode, errorResponse: errorDict)
+                throw AuthenticationError(message, statusCode: httpResponse.statusCode, response: errorDict)
             case 404:
-                throw NotFoundException(message, errorResponse: errorDict)
+                throw NotFoundError(message, response: errorDict)
             case 413:
-                throw StorageLimitExceededException(
-                    message,
-                    requiredBytes: 0,
-                    availableBytes: 0
-                )
+                throw StorageLimitExceededError(message, response: errorDict)
             case 429:
-                throw RateLimitException(message, errorResponse: errorDict)
+                throw RateLimitError(message, response: errorDict)
             default:
-                throw StorageException(message, statusCode: httpResponse.statusCode, errorResponse: errorDict)
+                throw StorageError(message, statusCode: httpResponse.statusCode, response: errorDict)
             }
         }
     }
 }
-

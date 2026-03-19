@@ -8,6 +8,8 @@
 
 import Foundation
 
+// MARK: - Query Models
+
 /// Response from a query operation
 public struct QueryResponse<T: Codable>: Codable {
     public let data: [T]
@@ -104,72 +106,7 @@ public struct ColumnInfo: Codable {
     }
 }
 
-/// Storage quota information
-public struct StorageQuota: Codable {
-    public let storageQuotaGb: Double
-    public let storageUsedGb: Double
-    public let storageExpansionGb: Double
-    public let storageAvailableGb: Double
-    public let usagePercentage: Double
-    public let canExpandStorage: Bool
-    public let isEnterprise: Bool
-    public let planName: String
-    
-    enum CodingKeys: String, CodingKey {
-        case storageQuotaGb = "storage_quota_gb"
-        case storageUsedGb = "storage_used_gb"
-        case storageExpansionGb = "storage_expansion_gb"
-        case storageAvailableGb = "storage_available_gb"
-        case usagePercentage = "usage_percentage"
-        case canExpandStorage = "can_expand_storage"
-        case isEnterprise = "is_enterprise"
-        case planName = "plan_name"
-    }
-    
-    public var storageQuotaBytes: Int64 {
-        Int64(storageQuotaGb * 1024 * 1024 * 1024)
-    }
-    
-    public var storageUsedBytes: Int64 {
-        Int64(storageUsedGb * 1024 * 1024 * 1024)
-    }
-    
-    public var storageAvailableBytes: Int64 {
-        Int64(storageAvailableGb * 1024 * 1024 * 1024)
-    }
-}
-
-/// Storage file information
-public struct StorageFile: Codable {
-    public let key: String
-    public let size: Int64
-    public let lastModified: String
-    public let contentType: String?
-    public let etag: String?
-    
-    enum CodingKeys: String, CodingKey {
-        case key
-        case size
-        case lastModified = "last_modified"
-        case contentType = "content_type"
-        case etag
-    }
-}
-
-/// File upload result
-public struct FileUploadResult: Codable {
-    public let key: String
-    public let size: Int64
-    public let url: String
-    public let success: Bool
-    
-    public init(key: String, size: Int64, url: String, success: Bool = true) {
-        self.key = key
-        self.size = size
-        self.url = url
-        self.success = success
-    }
-}
+// MARK: - Filter / Query Builder Models
 
 /// Filter operators for queries
 public enum FilterOperator: String, Codable {
@@ -199,7 +136,7 @@ public struct FilterExpression: Codable {
     public let column: String
     public let `operator`: FilterOperator
     public let value: AnyCodable?
-    public let logicalOp: String? // "AND" or "OR"
+    public let logicalOp: String?
     
     public init(column: String, operator op: FilterOperator, value: AnyCodable?, logicalOp: String? = "AND") {
         self.column = column
@@ -212,7 +149,7 @@ public struct FilterExpression: Codable {
 /// HAVING clause filter for aggregated results
 public struct HavingFilter: Codable {
     public let column: String
-    public let `operator`: String // "eq", "neq", "gt", "gte", "lt", "lte"
+    public let `operator`: String
     public let value: AnyCodable
     
     public init(column: String, operator op: String, value: AnyCodable) {
@@ -232,6 +169,248 @@ public struct OrderByItem: Codable {
         self.direction = direction
     }
 }
+
+// MARK: - Auth Models
+
+/// Token storage protocol for persisting auth tokens
+public protocol TokenStorage: AnyObject {
+    func getAccessToken() -> String?
+    func setAccessToken(_ token: String?)
+    func getRefreshToken() -> String?
+    func setRefreshToken(_ token: String?)
+}
+
+/// Default in-memory token storage
+public class MemoryTokenStorage: TokenStorage {
+    private var accessToken: String?
+    private var refreshToken: String?
+    
+    public init() {}
+    
+    public func getAccessToken() -> String? { accessToken }
+    public func setAccessToken(_ token: String?) { accessToken = token }
+    public func getRefreshToken() -> String? { refreshToken }
+    public func setRefreshToken(_ token: String?) { refreshToken = token }
+}
+
+/// Authenticated user
+public struct AuthUser: Codable {
+    public let id: String
+    public let email: String
+    public let fullName: String?
+    public let avatarUrl: String?
+    public let emailVerified: Bool
+    public let userMetadata: [String: AnyCodable]?
+    public let appMetadata: [String: AnyCodable]?
+    public let createdAt: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case id, email
+        case fullName = "full_name"
+        case avatarUrl = "avatar_url"
+        case emailVerified = "email_verified"
+        case userMetadata = "user_metadata"
+        case appMetadata = "app_metadata"
+        case createdAt = "created_at"
+    }
+    
+    public init(
+        id: String,
+        email: String,
+        fullName: String? = nil,
+        avatarUrl: String? = nil,
+        emailVerified: Bool = false,
+        userMetadata: [String: AnyCodable]? = nil,
+        appMetadata: [String: AnyCodable]? = nil,
+        createdAt: String? = nil
+    ) {
+        self.id = id
+        self.email = email
+        self.fullName = fullName
+        self.avatarUrl = avatarUrl
+        self.emailVerified = emailVerified
+        self.userMetadata = userMetadata
+        self.appMetadata = appMetadata
+        self.createdAt = createdAt
+    }
+}
+
+/// Authentication session tokens
+public struct AuthSession: Codable {
+    public let accessToken: String
+    public let refreshToken: String
+    public let tokenType: String
+    public let expiresIn: Int
+    
+    enum CodingKeys: String, CodingKey {
+        case accessToken = "access_token"
+        case refreshToken = "refresh_token"
+        case tokenType = "token_type"
+        case expiresIn = "expires_in"
+    }
+    
+    public init(accessToken: String, refreshToken: String, tokenType: String = "bearer", expiresIn: Int = 0) {
+        self.accessToken = accessToken
+        self.refreshToken = refreshToken
+        self.tokenType = tokenType
+        self.expiresIn = expiresIn
+    }
+}
+
+/// Authentication response (session + optional user)
+public struct AuthResponse {
+    public let session: AuthSession
+    public let user: AuthUser?
+    
+    public init(session: AuthSession, user: AuthUser? = nil) {
+        self.session = session
+        self.user = user
+    }
+}
+
+/// Backward-compatible alias
+public typealias AuthResult = AuthResponse
+
+// MARK: - Storage Models
+
+/// Storage bucket information
+public struct StorageBucket {
+    public let id: String
+    public let name: String
+    public let isPublic: Bool
+    public let fileSizeLimit: Int?
+    public let allowedMimeTypes: [String]?
+    public let createdAt: String?
+    public let objectCount: Int
+    public let totalSize: Int
+    
+    public init(data: [String: Any]) {
+        self.id = data["id"] as? String ?? ""
+        self.name = data["name"] as? String ?? ""
+        self.isPublic = data["public"] as? Bool ?? false
+        self.fileSizeLimit = data["file_size_limit"] as? Int
+        self.allowedMimeTypes = data["allowed_mime_types"] as? [String]
+        self.createdAt = data["created_at"] as? String
+        self.objectCount = data["object_count"] as? Int ?? 0
+        self.totalSize = data["total_size"] as? Int ?? 0
+    }
+}
+
+/// Storage file/object information
+public struct StorageFile {
+    public let id: String
+    public let bucketId: String
+    public let name: String
+    public let path: String
+    public let mimeType: String?
+    public let size: Int
+    public let metadata: [String: Any]
+    public let createdAt: String?
+    public let publicUrl: String?
+    
+    public var sizeMb: Double { Double(size) / (1024.0 * 1024.0) }
+    public var sizeGb: Double { Double(size) / (1024.0 * 1024.0 * 1024.0) }
+    
+    public init(data: [String: Any]) {
+        self.id = data["id"] as? String ?? ""
+        self.bucketId = data["bucket_id"] as? String ?? ""
+        self.name = data["name"] as? String ?? ""
+        self.path = data["path"] as? String ?? ""
+        self.mimeType = data["mime_type"] as? String
+        self.size = data["size"] as? Int ?? 0
+        self.metadata = data["metadata"] as? [String: Any] ?? [:]
+        self.createdAt = data["created_at"] as? String
+        self.publicUrl = data["public_url"] as? String
+    }
+}
+
+/// Storage quota / statistics information
+public struct StorageQuota {
+    public let totalFiles: Int
+    public let totalSizeBytes: Int
+    public let totalSizeGb: Double
+    public let fileTypes: [String: Any]
+    
+    public init(data: [String: Any]) {
+        self.totalFiles = data["total_files"] as? Int ?? 0
+        self.totalSizeBytes = data["total_size_bytes"] as? Int ?? 0
+        self.totalSizeGb = data["total_size_gb"] as? Double ?? 0.0
+        self.fileTypes = data["file_types"] as? [String: Any] ?? [:]
+    }
+}
+
+// MARK: - Legacy Auth Config (backward compatibility)
+
+/// Project authentication configuration (deprecated - use direct params)
+public struct ProjectAuthConfig {
+    public let projectUrl: String
+    public let baseDomain: String
+    public let secure: Bool
+    public let timeoutSeconds: TimeInterval
+    public let apiKey: String?
+    public let publicApiKey: String?
+    
+    public init(
+        projectUrl: String,
+        baseDomain: String = "wowsql.com",
+        secure: Bool = true,
+        timeoutSeconds: TimeInterval = 30,
+        apiKey: String? = nil,
+        publicApiKey: String? = nil
+    ) {
+        self.projectUrl = projectUrl
+        self.baseDomain = baseDomain
+        self.secure = secure
+        self.timeoutSeconds = timeoutSeconds
+        self.apiKey = apiKey ?? publicApiKey
+        self.publicApiKey = apiKey ?? publicApiKey
+    }
+}
+
+/// OAuth authorization response
+public struct OAuthAuthorizationResponse: Codable {
+    public let authorizationUrl: String
+    public let provider: String
+    public let redirectUri: String
+    public let backendCallbackUrl: String?
+    public let frontendRedirectUri: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case authorizationUrl = "authorization_url"
+        case provider
+        case redirectUri = "redirect_uri"
+        case backendCallbackUrl = "backend_callback_url"
+        case frontendRedirectUri = "frontend_redirect_uri"
+    }
+}
+
+/// Sign up request
+public struct SignUpRequest {
+    public let email: String
+    public let password: String
+    public let fullName: String?
+    public let userMetadata: [String: AnyCodable]?
+    
+    public init(email: String, password: String, fullName: String? = nil, userMetadata: [String: AnyCodable]? = nil) {
+        self.email = email
+        self.password = password
+        self.fullName = fullName
+        self.userMetadata = userMetadata
+    }
+}
+
+/// Sign in request
+public struct SignInRequest {
+    public let email: String
+    public let password: String
+    
+    public init(email: String, password: String) {
+        self.email = email
+        self.password = password
+    }
+}
+
+// MARK: - AnyCodable
 
 /// Type-erased Codable value
 public struct AnyCodable: Codable {
@@ -291,124 +470,3 @@ public struct AnyCodable: Codable {
         }
     }
 }
-
-// MARK: - Auth Models
-
-/// Project authentication configuration
-public struct ProjectAuthConfig {
-    public let projectUrl: String
-    public let baseDomain: String
-    public let secure: Bool
-    public let timeoutSeconds: TimeInterval
-    /// Unified API key - Anonymous Key (wowsql_anon_...) for client-side,
-    /// or Service Role Key (wowsql_service_...) for server-side.
-    /// UNIFIED AUTHENTICATION: Same key works for both auth and database operations.
-    public let apiKey: String?
-    /// Deprecated: Use apiKey instead. Kept for backward compatibility.
-    public let publicApiKey: String?
-    
-    public init(
-        projectUrl: String,
-        baseDomain: String = "wowsql.com",
-        secure: Bool = true,
-        timeoutSeconds: TimeInterval = 30,
-        apiKey: String? = nil,
-        publicApiKey: String? = nil
-    ) {
-        self.projectUrl = projectUrl
-        self.baseDomain = baseDomain
-        self.secure = secure
-        self.timeoutSeconds = timeoutSeconds
-        // UNIFIED AUTHENTICATION: Support both apiKey (new) and publicApiKey (deprecated)
-        self.apiKey = apiKey ?? publicApiKey
-        self.publicApiKey = apiKey ?? publicApiKey
-    }
-}
-
-/// Authenticated user
-public struct AuthUser: Codable {
-    public let id: String
-    public let email: String
-    public let fullName: String?
-    public let avatarUrl: String?
-    public let emailVerified: Bool
-    public let userMetadata: [String: AnyCodable]
-    public let appMetadata: [String: AnyCodable]
-    public let createdAt: String?
-    
-    enum CodingKeys: String, CodingKey {
-        case id
-        case email
-        case fullName = "full_name"
-        case avatarUrl = "avatar_url"
-        case emailVerified = "email_verified"
-        case userMetadata = "user_metadata"
-        case appMetadata = "app_metadata"
-        case createdAt = "created_at"
-    }
-}
-
-/// Authentication session
-public struct AuthSession: Codable {
-    public let accessToken: String
-    public let refreshToken: String
-    public let tokenType: String
-    public let expiresIn: Int
-    
-    enum CodingKeys: String, CodingKey {
-        case accessToken = "access_token"
-        case refreshToken = "refresh_token"
-        case tokenType = "token_type"
-        case expiresIn = "expires_in"
-    }
-}
-
-/// Authentication result
-public struct AuthResult {
-    public let user: AuthUser?
-    public let session: AuthSession
-}
-
-/// OAuth authorization response
-public struct OAuthAuthorizationResponse: Codable {
-    public let authorizationUrl: String
-    public let provider: String
-    public let redirectUri: String
-    public let backendCallbackUrl: String?
-    public let frontendRedirectUri: String?
-    
-    enum CodingKeys: String, CodingKey {
-        case authorizationUrl = "authorization_url"
-        case provider
-        case redirectUri = "redirect_uri"
-        case backendCallbackUrl = "backend_callback_url"
-        case frontendRedirectUri = "frontend_redirect_uri"
-    }
-}
-
-/// Sign up request
-public struct SignUpRequest {
-    public let email: String
-    public let password: String
-    public let fullName: String?
-    public let userMetadata: [String: AnyCodable]?
-    
-    public init(email: String, password: String, fullName: String? = nil, userMetadata: [String: AnyCodable]? = nil) {
-        self.email = email
-        self.password = password
-        self.fullName = fullName
-        self.userMetadata = userMetadata
-    }
-}
-
-/// Sign in request
-public struct SignInRequest {
-    public let email: String
-    public let password: String
-    
-    public init(email: String, password: String) {
-        self.email = email
-        self.password = password
-    }
-}
-

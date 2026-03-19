@@ -8,14 +8,23 @@
 
 import Foundation
 
+/// Paginated response wrapper
+public struct PaginatedResponse {
+    public let data: [[String: Any]]
+    public let page: Int
+    public let perPage: Int
+    public let total: Int
+    public let totalPages: Int
+}
+
 /// Fluent query builder for constructing and executing queries
 public class QueryBuilder {
     private let client: WOWSQLClient
     private let tableName: String
     private var selectedColumns: [String]?
     private var filters: [FilterExpression] = []
-    private var groupBy: [String]?
-    private var having: [HavingFilter] = []
+    private var groupByColumns: [String]?
+    private var havingFilters: [HavingFilter] = []
     private var orderColumn: String?
     private var orderItems: [OrderByItem]?
     private var orderDirection: SortDirection?
@@ -27,140 +36,128 @@ public class QueryBuilder {
         self.tableName = tableName
     }
     
-    /// Select specific columns
+    // MARK: - Select
+    
     @discardableResult
     public func select(_ columns: [String]) -> QueryBuilder {
         selectedColumns = columns
         return self
     }
     
-    /// Add a filter condition (generic method).
+    // MARK: - Filters
+    
     @discardableResult
     public func filter(_ column: String, _ op: FilterOperator, _ value: AnyCodable, _ logicalOp: String = "AND") -> QueryBuilder {
         filters.append(FilterExpression(column: column, operator: op, value: value, logicalOp: logicalOp))
         return self
     }
     
-    /// Add equality filter
     @discardableResult
     public func eq(_ column: String, _ value: AnyCodable) -> QueryBuilder {
         filters.append(FilterExpression(column: column, operator: .eq, value: value, logicalOp: "AND"))
         return self
     }
     
-    /// Add not-equal filter
     @discardableResult
     public func neq(_ column: String, _ value: AnyCodable) -> QueryBuilder {
         filters.append(FilterExpression(column: column, operator: .neq, value: value, logicalOp: "AND"))
         return self
     }
 
-    /// Add greater-than filter
     @discardableResult
     public func gt(_ column: String, _ value: AnyCodable) -> QueryBuilder {
         filters.append(FilterExpression(column: column, operator: .gt, value: value, logicalOp: "AND"))
         return self
     }
 
-    /// Add greater-than-or-equal filter
     @discardableResult
     public func gte(_ column: String, _ value: AnyCodable) -> QueryBuilder {
         filters.append(FilterExpression(column: column, operator: .gte, value: value, logicalOp: "AND"))
         return self
     }
 
-    /// Add less-than filter
     @discardableResult
     public func lt(_ column: String, _ value: AnyCodable) -> QueryBuilder {
         filters.append(FilterExpression(column: column, operator: .lt, value: value, logicalOp: "AND"))
         return self
     }
 
-    /// Add less-than-or-equal filter
     @discardableResult
     public func lte(_ column: String, _ value: AnyCodable) -> QueryBuilder {
         filters.append(FilterExpression(column: column, operator: .lte, value: value, logicalOp: "AND"))
         return self
     }
 
-    /// Add LIKE filter
     @discardableResult
     public func like(_ column: String, _ pattern: String) -> QueryBuilder {
         filters.append(FilterExpression(column: column, operator: .like, value: AnyCodable(pattern), logicalOp: "AND"))
         return self
     }
 
-    /// Add IS NULL filter
     @discardableResult
     public func isNull(_ column: String) -> QueryBuilder {
         filters.append(FilterExpression(column: column, operator: .isNull, value: nil, logicalOp: "AND"))
         return self
     }
 
-    /// Add IS NOT NULL filter
     @discardableResult
     public func isNotNull(_ column: String) -> QueryBuilder {
         filters.append(FilterExpression(column: column, operator: .isNot, value: nil, logicalOp: "AND"))
         return self
     }
 
-    /// Add IN filter
     @discardableResult
-    public func `in`(_ column: String, _ values: [AnyCodable]) -> QueryBuilder {
+    public func inList(_ column: String, _ values: [AnyCodable]) -> QueryBuilder {
         filters.append(FilterExpression(column: column, operator: .in, value: AnyCodable(values), logicalOp: "AND"))
         return self
     }
 
-    /// Add NOT IN filter
     @discardableResult
     public func notIn(_ column: String, _ values: [AnyCodable]) -> QueryBuilder {
         filters.append(FilterExpression(column: column, operator: .notIn, value: AnyCodable(values), logicalOp: "AND"))
         return self
     }
 
-    /// Add BETWEEN filter
     @discardableResult
     public func between(_ column: String, _ min: AnyCodable, _ max: AnyCodable) -> QueryBuilder {
         filters.append(FilterExpression(column: column, operator: .between, value: AnyCodable([min, max]), logicalOp: "AND"))
         return self
     }
 
-    /// Add NOT BETWEEN filter
     @discardableResult
     public func notBetween(_ column: String, _ min: AnyCodable, _ max: AnyCodable) -> QueryBuilder {
         filters.append(FilterExpression(column: column, operator: .notBetween, value: AnyCodable([min, max]), logicalOp: "AND"))
         return self
     }
 
-    /// Add filter with OR logical operator
     @discardableResult
-    public func or(_ column: String, _ op: FilterOperator, _ value: AnyCodable) -> QueryBuilder {
+    public func orFilter(_ column: String, _ op: FilterOperator, _ value: AnyCodable) -> QueryBuilder {
         filters.append(FilterExpression(column: column, operator: op, value: value, logicalOp: "OR"))
         return self
     }
 
-    /// Group results by column(s)
+    // MARK: - Grouping / Having
+
     @discardableResult
     public func groupBy(_ columns: [String]) -> QueryBuilder {
-        groupBy = columns
+        groupByColumns = columns
         return self
     }
 
-    /// Add HAVING clause filter
+    @discardableResult
+    public func groupBy(_ column: String) -> QueryBuilder {
+        groupByColumns = [column]
+        return self
+    }
+
     @discardableResult
     public func having(_ column: String, _ op: String, _ value: AnyCodable) -> QueryBuilder {
-        having.append(HavingFilter(column: column, operator: op, value: value))
+        havingFilters.append(HavingFilter(column: column, operator: op, value: value))
         return self
     }
 
-    /// Order by multiple columns
-    @discardableResult
-    public func orderByMultiple(_ items: [OrderByItem]) -> QueryBuilder {
-        orderItems = items
-        return self
-    }
-    
-    /// Set order by
+    // MARK: - Ordering
+
     @discardableResult
     public func orderBy(_ column: String, _ direction: SortDirection = .asc) -> QueryBuilder {
         orderColumn = column
@@ -168,32 +165,38 @@ public class QueryBuilder {
         return self
     }
     
-    /// Order results by column (alias for orderBy, backward compatibility).
     @discardableResult
     public func order(_ column: String, _ direction: SortDirection = .asc) -> QueryBuilder {
         return orderBy(column, direction)
     }
+
+    @discardableResult
+    public func orderByMultiple(_ items: [OrderByItem]) -> QueryBuilder {
+        orderItems = items
+        return self
+    }
     
-    /// Set limit
+    // MARK: - Pagination
+    
     @discardableResult
     public func limit(_ value: Int) -> QueryBuilder {
         limitValue = value
         return self
     }
     
-    /// Set offset
     @discardableResult
     public func offset(_ value: Int) -> QueryBuilder {
         offsetValue = value
         return self
     }
     
-    /// Execute query
+    // MARK: - Execution
+    
+    /// Execute query and return typed results.
     public func execute<T: Codable>() async throws -> QueryResponse<T> {
-        // Check if we need POST endpoint (advanced features)
         let hasAdvancedFeatures = 
-            (groupBy != nil && !groupBy!.isEmpty) ||
-            !having.isEmpty ||
+            (groupByColumns != nil && !groupByColumns!.isEmpty) ||
+            !havingFilters.isEmpty ||
             (orderItems != nil && !orderItems!.isEmpty) ||
             filters.contains { f in
                 f.operator == .in || f.operator == .notIn || 
@@ -203,13 +206,11 @@ public class QueryBuilder {
         let response: [String: AnyCodable]
         
         if hasAdvancedFeatures {
-            // Use POST endpoint for advanced queries
             let body = buildQueryBody()
-            let url = URL(string: "\(client.baseUrl)/api/v2/\(tableName)/query")!
+            let url = URL(string: "\(client.apiUrl)/\(tableName)/query")!
             response = try await client.executeRequest(url: url, method: "POST", body: body)
         } else {
-            // Use GET endpoint for simple queries (backward compatibility)
-            let url = URL(string: "\(client.baseUrl)/api/v2/\(tableName)")!
+            let url = URL(string: "\(client.apiUrl)/\(tableName)")!
             let params = buildQueryParams()
             var urlComponents = URLComponents(url: url, resolvingAgainstBaseURL: false)!
             urlComponents.queryItems = params.map { URLQueryItem(name: $0.key, value: "\($0.value)") }
@@ -217,7 +218,6 @@ public class QueryBuilder {
             response = try await client.executeRequest(url: finalUrl, method: "GET", body: nil)
         }
         
-        // Parse response
         if let dataArray = response["data"]?.value as? [[String: Any]] {
             let jsonData = try JSONSerialization.data(withJSONObject: dataArray)
             let data = try JSONDecoder().decode([T].self, from: jsonData)
@@ -230,28 +230,89 @@ public class QueryBuilder {
         return QueryResponse(data: [], count: 0)
     }
 
-    /// Get query results (alias for execute)
+    /// Get query results (alias for execute).
     public func get<T: Codable>() async throws -> QueryResponse<T> {
         return try await execute()
     }
     
-    /// Get first result
+    /// Get first result.
     public func first<T: Codable>() async throws -> T? {
         return try await limit(1).execute().data.first
     }
     
-    /// Insert record (alias for create)
+    /// Get exactly one record. Throws if zero or more than one found.
+    public func single<T: Codable>() async throws -> T {
+        let result: QueryResponse<T> = try await limit(2).execute()
+        if result.data.isEmpty {
+            throw WOWSQLError("No records found")
+        }
+        if result.data.count > 1 {
+            throw WOWSQLError("Multiple records found, expected exactly one")
+        }
+        return result.data[0]
+    }
+    
+    /// Get the total count of records matching the current filters.
+    public func count() async throws -> Int {
+        let savedSelect = selectedColumns
+        let savedGroup = groupByColumns
+        let savedHaving = havingFilters
+        let savedOrder = orderColumn
+        let savedDir = orderDirection
+        
+        selectedColumns = ["COUNT(*) as count"]
+        groupByColumns = nil
+        havingFilters = []
+        orderColumn = nil
+        orderDirection = nil
+        
+        defer {
+            selectedColumns = savedSelect
+            groupByColumns = savedGroup
+            havingFilters = savedHaving
+            orderColumn = savedOrder
+            orderDirection = savedDir
+        }
+        
+        let result: QueryResponse<[String: AnyCodable]> = try await execute()
+        if let first = result.data.first, let countVal = first["count"]?.value {
+            if let intVal = countVal as? Int { return intVal }
+            if let strVal = countVal as? String, let intVal = Int(strVal) { return intVal }
+        }
+        return 0
+    }
+    
+    /// Paginate results with page-based interface.
+    public func paginate(page: Int = 1, perPage: Int = 20) async throws -> PaginatedResponse {
+        let offsetVal = (max(page, 1) - 1) * perPage
+        let result: QueryResponse<[String: AnyCodable]> = try await limit(perPage).offset(offsetVal).execute()
+        let total = result.total ?? result.count
+        let totalPages = total > 0 ? (total + perPage - 1) / perPage : 0
+        
+        let rawData: [[String: Any]] = result.data.map { dict in
+            dict.mapValues { $0.value }
+        }
+        
+        return PaginatedResponse(
+            data: rawData,
+            page: page,
+            perPage: perPage,
+            total: total,
+            totalPages: totalPages
+        )
+    }
+    
+    // MARK: - Mutation Methods on QueryBuilder
+    
     public func insert(_ data: [String: AnyCodable]) async throws -> CreateResponse {
         return try await create(data)
     }
     
-    /// Create record
     public func create(_ data: [String: AnyCodable]) async throws -> CreateResponse {
-        let url = URL(string: "\(client.baseUrl)/api/v2/\(tableName)")!
+        let url = URL(string: "\(client.apiUrl)/\(tableName)")!
         return try await client.executeRequest(url: url, method: "POST", body: data)
     }
     
-    /// Update records
     public func update(_ data: [String: AnyCodable]) async throws -> UpdateResponse {
         var body: [String: AnyCodable] = ["data": AnyCodable(data)]
         if !filters.isEmpty {
@@ -265,11 +326,10 @@ public class QueryBuilder {
             body["filters"] = AnyCodable(filterArray)
         }
         
-        let url = URL(string: "\(client.baseUrl)/api/v2/\(tableName)")!
+        let url = URL(string: "\(client.apiUrl)/\(tableName)")!
         return try await client.executeRequest(url: url, method: "PATCH", body: body)
     }
     
-    /// Delete records
     public func delete() async throws -> DeleteResponse {
         var body: [String: AnyCodable] = [:]
         if !filters.isEmpty {
@@ -283,9 +343,11 @@ public class QueryBuilder {
             body["filters"] = AnyCodable(filterArray)
         }
         
-        let url = URL(string: "\(client.baseUrl)/api/v2/\(tableName)")!
+        let url = URL(string: "\(client.apiUrl)/\(tableName)")!
         return try await client.executeRequest(url: url, method: "DELETE", body: body)
     }
+    
+    // MARK: - Private Helpers
     
     private func buildQueryParams() -> [String: AnyCodable] {
         var params: [String: AnyCodable] = [:]
@@ -343,12 +405,12 @@ public class QueryBuilder {
             body["filters"] = AnyCodable(filterArray)
         }
         
-        if let groupBy = groupBy, !groupBy.isEmpty {
+        if let groupBy = groupByColumns, !groupBy.isEmpty {
             body["group_by"] = AnyCodable(groupBy)
         }
         
-        if !having.isEmpty {
-            let havingArray = having.map { h -> [String: AnyCodable] in
+        if !havingFilters.isEmpty {
+            let havingArray = havingFilters.map { h -> [String: AnyCodable] in
                 [
                     "column": AnyCodable(h.column),
                     "operator": AnyCodable(h.`operator`),
@@ -384,4 +446,3 @@ public class QueryBuilder {
         return body
     }
 }
-

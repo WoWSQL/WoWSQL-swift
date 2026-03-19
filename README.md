@@ -1,322 +1,262 @@
-# 🚀 WOWSQL Swift SDK
+# WowSQL Swift SDK
 
-Official Swift SDK for [WOWSQL](https://wowsql.com) - MySQL Backend-as-a-Service with S3 Storage.
+Official Swift package for [WowSQL](https://wowsql.com) — PostgreSQL backend-as-a-service with project auth, object storage, and schema management.
 
-[![Swift Package Manager](https://img.shields.io/badge/SPM-supported-DE5C43.svg?logo=swift)](https://swift.org/package-manager/)
+**Product module:** `WOWSQL` · **Swift:** 5.9+ · **Platforms:** iOS 13+, macOS 10.15+, watchOS 6+, tvOS 13+
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## ✨ Features
+---
 
-### Database Features
-- 🗄️ Full CRUD operations (Create, Read, Update, Delete)
-- 🔍 Advanced filtering (eq, neq, gt, gte, lt, lte, like, isNull)
-- 📄 Pagination (limit, offset)
-- 📊 Sorting (orderBy)
-- 🎯 Fluent query builder API
-- 🔒 Type-safe queries with Codable
-- ⚡ async/await support
-- 📝 Raw SQL queries
-- 📋 Table schema introspection
+## Table of contents
 
-### Storage Features
-- 📦 S3-compatible storage for file management
-- ⬆️ File upload with automatic quota validation
-- ⬇️ File download (presigned URLs)
-- 📂 File listing with metadata
-- 🗑️ File deletion (single and batch)
-- 📊 Storage quota management
+1. [Installation](#installation)
+2. [Quick start](#quick-start)
+3. [Concepts & API keys](#concepts--api-keys)
+4. [Database: `WOWSQLClient`](#database-wowsqlclient)
+5. [Table & `QueryBuilder`](#table--querybuilder)
+6. [Authentication: `ProjectAuthClient`](#authentication-projectauthclient)
+7. [Storage: `WOWSQLStorage`](#storage-wowsqlstorage)
+8. [Schema: `WOWSQLSchema`](#schema-wowsqlschema)
+9. [Models](#models)
+10. [Errors](#errors)
+11. [Examples](#examples)
+12. [Links](#links)
 
-## 📦 Installation
+---
+
+## Installation
 
 ### Swift Package Manager
 
-Add the following to your `Package.swift`:
+`Package.swift`:
 
 ```swift
 dependencies: [
     .package(url: "https://github.com/wowsql/wowsql-swift.git", from: "1.0.0")
+],
+targets: [
+    .target(name: "MyApp", dependencies: ["WOWSQL"])
 ]
 ```
 
-Or add it via Xcode:
-1. File → Add Packages...
-2. Enter: `https://github.com/wowsql/wowsql-swift.git`
-3. Select version: `1.0.0`
+Xcode: **File → Add Package Dependencies…** and enter the repository URL.
 
-## 🚀 Quick Start
+---
 
-### Database Operations
+## Quick start
 
 ```swift
 import WOWSQL
 
 let client = WOWSQLClient(
     projectUrl: "https://your-project.wowsql.com",
-    apiKey: "your-api-key"
+    apiKey: ProcessInfo.processInfo.environment["WOWSQL_SERVICE_KEY"]!,
+    baseDomain: "wowsql.com",
+    secure: true,
+    timeout: 30,
+    verifySsl: true
 )
 
-// Query data
-let response = try await client.table("users")
-    .select("id", "name", "email")
-    .eq("status", AnyCodable("active"))
+let response = try await client.table("posts")
+    .select("id", "title")
+    .eq("published", AnyCodable(true))
     .limit(10)
     .execute() as QueryResponse<[String: AnyCodable]>
 
-print("Found \(response.count) users")
-for user in response.data {
-    print("\(user["name"]?.value ?? "Unknown") - \(user["email"]?.value ?? "")")
-}
+print("count:", response.count)
 ```
 
-### Storage Operations
+---
+
+## Concepts & API keys
+
+| Key | Prefix | Use |
+|-----|--------|-----|
+| Anonymous | `wowsql_anon_…` | Client apps — auth + limited data |
+| Service role | `wowsql_service_…` | **Server only** — privileged DB, storage, schema |
+
+- Use **service role** for `WOWSQLSchema` and trusted backends.
+- JWTs from `ProjectAuthClient` are for **your** session handling; data/storage clients typically use **API keys** from the dashboard (see platform docs).
+
+---
+
+## Database: `WOWSQLClient`
 
 ```swift
-let storage = WOWSQLStorage(
-    projectUrl: "https://your-project.wowsql.com",
-    apiKey: "your-api-key"
-)
-
-// Upload file
-let fileData = try Data(contentsOf: URL(fileURLWithPath: "document.pdf"))
-let result = try await storage.uploadBytes(
-    fileData,
-    key: "uploads/document.pdf",
-    contentType: "application/pdf"
-)
-print("Uploaded: \(result.url)")
-
-// Check quota
-let quota = try await storage.getQuota()
-print("Storage used: \(quota.storageUsedGb)GB / \(quota.storageQuotaGb)GB")
-```
-
-## 🔧 Schema Management
-
-Programmatically manage your database schema with the `WOWSQLSchema` client.
-
-> **⚠️ IMPORTANT**: Schema operations require a **Service Role Key** (`service_*`). Anonymous keys will return a 403 Forbidden error.
-
-### Quick Start
-
-```swift
-import WOWSQL
-
-// Initialize schema client with SERVICE ROLE KEY
-let schema = WOWSQLSchema(
-    projectURL: "https://your-project.wowsql.com",
-    serviceKey: "service_xyz789..."  // ⚠️ Backend only! Never expose!
+public init(
+    projectUrl: String,
+    apiKey: String,
+    baseDomain: String = "wowsql.com",
+    secure: Bool = true,
+    timeout: TimeInterval = 30,
+    verifySsl: Bool = true
 )
 ```
 
-### Create Table
+| Method | Description |
+|--------|-------------|
+| `table(_ name: String) -> Table` | Entry point for CRUD / queries. |
+| `listTables() async throws -> [String]` | |
+| `getTableSchema(_ name: String) async throws -> TableSchema` | |
+| `close()` | Release resources. |
+
+---
+
+## Table & `QueryBuilder`
+
+### `Table`
+
+| Method | Returns |
+|--------|---------|
+| `select(_ columns: String...) -> QueryBuilder` | Also `select([String])`. |
+| `filter(_ column:, _ op:, _ value:, _ logicalOp:) -> QueryBuilder` | |
+| `get<T: Codable>() async throws -> QueryResponse<T>` | |
+| `getById(_ id: AnyCodable) async throws -> [String: AnyCodable]` | |
+| `create` / `insert` | `CreateResponse` |
+| `bulkInsert` | `[CreateResponse]` |
+| `upsert(_:onConflict:)` | `[String: AnyCodable]` |
+| `update(_:data:)` | `UpdateResponse` |
+| `delete(_:)` | `DeleteResponse` |
+| `eq`, `neq`, `gt`, `gte`, `lt`, `lte` | `QueryBuilder` |
+| `orderBy(_:_)` | `QueryBuilder` |
+| `count() async throws -> Int` | |
+| `paginate(page:perPage:) async throws -> PaginatedResponse` | |
+
+### `QueryBuilder`
+
+Chain: `select`, `filter`, `eq`, …, `like`, `isNull`, `isNotNull`, `inList`, `notIn`, `between`, `notBetween`, `orFilter`, `groupBy`, `having`, `orderBy`, `order`, `orderByMultiple`, `limit`, `offset`.
+
+**Terminal:** `execute<T>()`, `get<T>()`, `first<T>()`, `single<T>()`, `count()`, `paginate`.
+
+**Mutations:** `insert`, `create`, `update`, `delete` (see source for filter-based updates/deletes).
+
+### `FilterOperator` / `SortDirection`
+
+Enums mirroring the REST API (`eq`, `neq`, …, `asc`, `desc`).
+
+---
+
+## Authentication: `ProjectAuthClient`
 
 ```swift
-// Create a new table
-try await schema.createTable(CreateTableRequest(
-    tableName: "products",
-    columns: [
-        ColumnDefinition(name: "id", type: "INT", autoIncrement: true),
-        ColumnDefinition(name: "name", type: "VARCHAR(255)", notNull: true),
-        ColumnDefinition(name: "price", type: "DECIMAL(10,2)", notNull: true),
-        ColumnDefinition(name: "category", type: "VARCHAR(100)"),
-        ColumnDefinition(name: "created_at", type: "TIMESTAMP", defaultValue: "CURRENT_TIMESTAMP")
-    ],
-    primaryKey: "id",
-    indexes: [
-        IndexDefinition(name: "idx_category", columns: ["category"]),
-        IndexDefinition(name: "idx_price", columns: ["price"])
-    ]
-))
-
-print("Table created successfully!")
+public init(
+    projectUrl: String,
+    apiKey: String?,
+    baseDomain: String = "wowsql.com",
+    secure: Bool = true,
+    timeout: TimeInterval = 30,
+    verifySsl: Bool = true,
+    tokenStorage: TokenStorage? = nil
+)
 ```
 
-### Alter Table
+### `TokenStorage` protocol
+
+`getAccessToken`, `setAccessToken`, `getRefreshToken`, `setRefreshToken`.
+
+`MemoryTokenStorage` is provided for demos.
+
+### Methods (async / throws)
+
+| Method | Purpose |
+|--------|---------|
+| `signUp`, `signIn` | Email/password. |
+| `getUser(accessToken:)` | Load profile. |
+| `getOAuthAuthorizationUrl`, `exchangeOAuthCallback` | OAuth. |
+| `forgotPassword`, `resetPassword`, `changePassword` | Password flows. |
+| `sendOtp`, `verifyOtp`, `sendMagicLink` | OTP / magic link. |
+| `verifyEmail`, `resendVerification` | Email verification. |
+| `logout`, `refreshToken` | Session lifecycle. |
+| `updateUser` | Profile updates. |
+| `getSession`, `setSession`, `clearSession` | Local session. |
+
+---
+
+## Storage: `WOWSQLStorage`
 
 ```swift
-// Add a new column
-try await schema.alterTable(AlterTableRequest(
-    tableName: "products",
-    addColumns: [
-        ColumnDefinition(name: "stock_quantity", type: "INT", defaultValue: "0")
-    ]
-))
-
-// Modify an existing column
-try await schema.alterTable(AlterTableRequest(
-    tableName: "products",
-    modifyColumns: [
-        ColumnDefinition(name: "price", type: "DECIMAL(12,2)")  // Increase precision
-    ]
-))
-
-// Drop a column
-try await schema.alterTable(AlterTableRequest(
-    tableName: "products",
-    dropColumns: ["category"]
-))
-
-// Rename a column
-try await schema.alterTable(AlterTableRequest(
-    tableName: "products",
-    renameColumns: [
-        RenameColumn(oldName: "name", newName: "product_name")
-    ]
-))
+public init(
+    projectUrl: String,
+    apiKey: String,
+    projectSlug: String? = nil,
+    baseUrl: String? = nil,
+    baseDomain: String = "wowsql.com",
+    secure: Bool = true,
+    timeout: TimeInterval = 60,
+    verifySsl: Bool = true
+)
 ```
 
-### Drop Table
+| Method | Purpose |
+|--------|---------|
+| `createBucket`, `listBuckets`, `getBucket`, `updateBucket`, `deleteBucket` | Bucket CRUD. |
+| `upload`, `uploadFromPath` | File upload. |
+| `listFiles`, `download`, `downloadToFile`, `deleteFile` | Object operations. |
+| `getPublicUrl` | Public URL helper. |
+| `getStats`, `getQuota` | Usage. |
+| `close()` | |
+
+---
+
+## Schema: `WOWSQLSchema`
+
+**Requires service role key.**
+
+| Method | Purpose |
+|--------|---------|
+| `createTable`, `alterTable`, `dropTable` | DDL. |
+| `executeSql` | Raw SQL (where permitted). |
+| `addColumn`, `dropColumn`, `renameColumn`, `modifyColumn` | Column ops. |
+| `createIndex` | Indexes. |
+| `listTables`, `getTableSchema` | Introspection. |
+
+Typed helpers: `ColumnDefinition`, `CreateTableRequest`, `AlterTableRequest`, `SchemaResponse`, etc.
+
+---
+
+## Models
+
+`QueryResponse`, `CreateResponse`, `UpdateResponse`, `DeleteResponse`, `TableSchema`, `ColumnInfo`, `PaginatedResponse`, `AuthUser`, `AuthSession`, `AuthResponse`, `StorageBucket`, `StorageFile`, `StorageQuota`, `FilterExpression`, `HavingFilter`, `OrderByItem`, `AnyCodable`, …
+
+---
+
+## Errors
+
+Throwing APIs surface `Error` types from the package (see `Models.swift` / client files). Map HTTP failures to user-visible messages in your UI.
+
+---
+
+## Examples
+
+### iOS: load rows in a view model
 
 ```swift
-// Drop a table
-try await schema.dropTable("old_table")
+@MainActor
+final class PostsVM: ObservableObject {
+    @Published var items: [[String: AnyCodable]] = []
 
-// Drop with CASCADE (removes dependent objects)
-try await schema.dropTable("products", cascade: true)
-```
-
-### Execute Raw SQL
-
-```swift
-// Execute custom schema SQL
-try await schema.executeSQL("""
-    CREATE INDEX idx_product_name 
-    ON products(product_name);
-""")
-
-// Add a foreign key constraint
-try await schema.executeSQL("""
-    ALTER TABLE orders 
-    ADD CONSTRAINT fk_product 
-    FOREIGN KEY (product_id) 
-    REFERENCES products(id);
-""")
-```
-
-### Security & Best Practices
-
-#### ✅ DO:
-- Use service role keys **only in backend/server code** (never in iOS/macOS apps)
-- Store service keys in environment variables or secure configuration
-- Use anonymous keys for client-side data operations
-- Test schema changes in development first
-
-#### ❌ DON'T:
-- Never expose service role keys in iOS/macOS app code
-- Never commit service keys to version control
-- Don't use anonymous keys for schema operations (will fail)
-
-### Example: Backend Migration Script
-
-```swift
-import WOWSQL
-import Foundation
-
-func runMigration() async throws {
-    let schema = WOWSQLSchema(
-        projectURL: ProcessInfo.processInfo.environment["WOWSQL_PROJECT_URL"]!,
-        serviceKey: ProcessInfo.processInfo.environment["WOWSQL_SERVICE_KEY"]!  // From env var
-    )
-    
-    // Create users table
-    try await schema.createTable(CreateTableRequest(
-        tableName: "users",
-        columns: [
-            ColumnDefinition(name: "id", type: "INT", autoIncrement: true),
-            ColumnDefinition(name: "email", type: "VARCHAR(255)", unique: true, notNull: true),
-            ColumnDefinition(name: "name", type: "VARCHAR(255)", notNull: true),
-            ColumnDefinition(name: "created_at", type: "TIMESTAMP", defaultValue: "CURRENT_TIMESTAMP")
-        ],
-        primaryKey: "id",
-        indexes: [
-            IndexDefinition(name: "idx_email", columns: ["email"])
-        ]
-    ))
-    
-    print("Migration completed!")
-}
-
-// Run migration
-Task {
-    try await runMigration()
-}
-```
-
-### Error Handling
-
-```swift
-import WOWSQL
-
-do {
-    let schema = WOWSQLSchema(
-        projectURL: "https://your-project.wowsql.com",
-        serviceKey: "service_xyz..."
-    )
-    
-    try await schema.createTable(CreateTableRequest(
-        tableName: "test",
-        columns: [ColumnDefinition(name: "id", type: "INT")]
-    ))
-} catch let error as PermissionError {
-    print("Permission denied: \(error.message)")
-    print("Make sure you're using a SERVICE ROLE KEY, not an anonymous key!")
-} catch {
-    print("Error: \(error)")
+    func load() async {
+        do {
+            let client = WOWSQLClient(projectUrl: url, apiKey: key)
+            let res = try await client.table("posts")
+                .select("id", "title")
+                .orderBy("created_at", .desc)
+                .limit(50)
+                .execute() as QueryResponse<[String: AnyCodable]>
+            items = res.data
+        } catch {
+            print(error)
+        }
+    }
 }
 ```
 
 ---
 
-## 📚 Documentation
+## Links
 
-## 🔑 Unified Authentication
+- [WowSQL Docs](https://wowsql.com/docs)
+- [Dashboard](https://wowsql.com)
 
-**✨ One Project = One Set of Keys for ALL Operations**
-
-WOWSQL uses **unified authentication** - the same API keys work for both database operations AND authentication operations.
-
-### Key Types
-
-1. **Anonymous Key** (`wowsql_anon_...`) ✨ **Unified Key**
-   - Used for: 
-     - ✅ Client-side auth operations (signup, login, OAuth)
-     - ✅ Public/client-side database operations with limited permissions
-   - **Safe to expose** in frontend code (browser, mobile apps)
-
-2. **Service Role Key** (`wowsql_service_...`) ✨ **Unified Key**
-   - Used for:
-     - ✅ Server-side auth operations (admin, full access)
-     - ✅ Server-side database operations (full access, bypass RLS)
-   - **NEVER expose** in frontend code - server-side only!
-
-### Usage Example
-
-```swift
-import WOWSQL
-
-// Database operations
-let dbClient = WOWSQLClient(
-    projectUrl: "https://your-project.wowsql.com",
-    apiKey: "wowsql_anon_..."  // Anonymous Key
-)
-
-// Authentication operations - SAME KEY!
-let authConfig = ProjectAuthConfig(
-    projectUrl: "https://your-project.wowsql.com",
-    apiKey: "wowsql_anon_..."  // Same Anonymous Key
-)
-let authClient = ProjectAuthClient(config: authConfig)
-```
-
-**Note:** The `publicApiKey` parameter is deprecated but still works for backward compatibility. Use `apiKey` instead.
-
-Full documentation available at: https://wowsql.com/docs/swift
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) file for details.
-
----
-
-Made with ❤️ by the WOWSQL Team
-
+**License:** MIT
