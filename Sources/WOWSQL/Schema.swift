@@ -23,7 +23,7 @@ import FoundationNetworking
 /// )
 ///
 /// try await schema.createTable("users", columns: [
-///     ["name": "id", "type": "SERIAL", "auto_increment": true],
+///     ["name": "id", "type": "UUID", "auto_increment": true],
 ///     ["name": "email", "type": "VARCHAR(255)", "unique": true, "nullable": false],
 /// ], primaryKey: "id", indexes: ["email"])
 /// ```
@@ -85,21 +85,22 @@ public class WOWSQLSchema {
     
     /// Create a new table.
     ///
-    /// Supported PostgreSQL types: SERIAL, BIGSERIAL, VARCHAR(n), TEXT, INT,
-    /// BIGINT, BOOLEAN, NUMERIC(p,s), REAL, DOUBLE PRECISION, TIMESTAMPTZ,
-    /// DATE, TIME, UUID, JSONB, TEXT[], INT[], BYTEA, etc.
+    /// The primary key column must use PostgreSQL type `UUID`. Other columns may use
+    /// SERIAL, VARCHAR, INT, etc.
     public func createTable(
         _ tableName: String,
         columns: [[String: Any]],
-        primaryKey: String? = nil,
+        primaryKey: String,
         indexes: [String]? = nil
     ) async throws -> [String: Any] {
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "table_name": tableName,
             "columns": columns,
-            "primary_key": primaryKey as Any,
-            "indexes": indexes as Any
+            "primary_key": primaryKey,
         ]
+        if let indexes = indexes {
+            body["indexes"] = indexes
+        }
         return try await request("POST", path: "/api/v2/schema/tables", jsonBody: body)
     }
     
@@ -376,7 +377,7 @@ public struct IndexDefinition: Codable {
 public struct CreateTableRequest: Codable {
     public let tableName: String
     public let columns: [ColumnDefinition]
-    public let primaryKey: String?
+    public let primaryKey: String
     public let indexes: [IndexDefinition]?
     
     enum CodingKeys: String, CodingKey {
@@ -389,7 +390,7 @@ public struct CreateTableRequest: Codable {
     public init(
         tableName: String,
         columns: [ColumnDefinition],
-        primaryKey: String? = nil,
+        primaryKey: String,
         indexes: [IndexDefinition]? = nil
     ) {
         self.tableName = tableName
