@@ -32,33 +32,34 @@ public class WOWSQLClient {
     
     /// Initialize the client for DATABASE OPERATIONS.
     ///
+    /// All requests are sent directly to the PostgREST endpoint (`/rest/v1`).
+    ///
     /// - Parameters:
     ///   - projectUrl: Project subdomain or full URL
-    ///     (e.g., `"myproject"`, `"https://myproject.wowsql.com"`)
+    ///     (e.g., `"myproject"`, `"https://myproject.wowsqlconnect.com"`)
     ///   - apiKey: API key (Service Role or Anonymous)
-    ///   - baseDomain: Base domain (default: `"wowsql.com"`)
+    ///   - baseDomain: Base domain (default: `"wowsqlconnect.com"`)
     ///   - secure: Use HTTPS (default: `true`)
     ///   - timeout: Request timeout in seconds (default: 30)
-    ///   - verifySsl: Verify SSL certificates (default: `true`).
-    ///     URLSession does not expose per-request SSL bypass so this is
-    ///     accepted for API compatibility but not enforced at runtime.
+    ///   - verifySsl: Verify SSL certificates (default: `true`)
     public init(
         projectUrl: String,
         apiKey: String,
-        baseDomain: String = "wowsql.com",
+        baseDomain: String = "wowsqlconnect.com",
         secure: Bool = true,
         timeout: TimeInterval = 30,
         verifySsl: Bool = true
     ) {
         let url = projectUrl.trimmingCharacters(in: .whitespaces)
-        
+        let apiPath = "/rest/v1"
+
         if url.hasPrefix("http://") || url.hasPrefix("https://") {
             var base = url.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             if base.contains("/api") {
                 base = base.components(separatedBy: "/api").first ?? base
             }
             self.baseUrl = base
-            self.apiUrl = "\(base)/api/v2"
+            self.apiUrl = "\(base)\(apiPath)"
         } else {
             let proto = secure ? "https" : "http"
             let base: String
@@ -68,7 +69,7 @@ public class WOWSQLClient {
                 base = "\(proto)://\(url).\(baseDomain)"
             }
             self.baseUrl = base
-            self.apiUrl = "\(base)/api/v2"
+            self.apiUrl = "\(base)\(apiPath)"
         }
         
         self.apiKey = apiKey

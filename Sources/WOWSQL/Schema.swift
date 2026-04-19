@@ -38,14 +38,14 @@ public class WOWSQLSchema {
     /// - Parameters:
     ///   - projectUrl: Project subdomain or full URL
     ///   - serviceKey: Service role key (`wowsql_service_...`)
-    ///   - baseDomain: Base domain (default: `"wowsql.com"`)
+    ///   - baseDomain: Base domain (default: `"wowsqlconnect.com"`)
     ///   - secure: Use HTTPS (default: `true`)
     ///   - timeout: Request timeout in seconds (default: 30)
     ///   - verifySsl: Verify SSL (default: `true`)
     public init(
         projectUrl: String,
         serviceKey: String,
-        baseDomain: String = "wowsql.com",
+        baseDomain: String = "wowsqlconnect.com",
         secure: Bool = true,
         timeout: TimeInterval = 30,
         verifySsl: Bool = true

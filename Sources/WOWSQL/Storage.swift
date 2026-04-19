@@ -38,7 +38,7 @@ public class WOWSQLStorage {
     ///   - apiKey: API key for authentication
     ///   - projectSlug: Explicit slug (used with `baseUrl`)
     ///   - baseUrl: Explicit base URL (used with `projectSlug`)
-    ///   - baseDomain: Base domain (default: `"wowsql.com"`)
+    ///   - baseDomain: Base domain (default: `"wowsqlconnect.com"`)
     ///   - secure: Use HTTPS (default: `true`)
     ///   - timeout: Request timeout in seconds (default: 60)
     ///   - verifySsl: Verify SSL (default: `true`)
@@ -47,7 +47,7 @@ public class WOWSQLStorage {
         apiKey: String = "",
         projectSlug: String? = nil,
         baseUrl: String? = nil,
-        baseDomain: String = "wowsql.com",
+        baseDomain: String = "wowsqlconnect.com",
         secure: Bool = true,
         timeout: TimeInterval = 60,
         verifySsl: Bool = true

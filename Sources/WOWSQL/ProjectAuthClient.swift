@@ -37,7 +37,7 @@ public class ProjectAuthClient {
     /// - Parameters:
     ///   - projectUrl: Project subdomain or full URL
     ///   - apiKey: API key (Anonymous or Service Role)
-    ///   - baseDomain: Base domain (default: `"wowsql.com"`)
+    ///   - baseDomain: Base domain (default: `"wowsqlconnect.com"`)
     ///   - secure: Use HTTPS (default: `true`)
     ///   - timeout: Request timeout in seconds (default: 30)
     ///   - verifySsl: Verify SSL (default: `true`)
@@ -45,7 +45,7 @@ public class ProjectAuthClient {
     public init(
         projectUrl: String,
         apiKey: String? = nil,
-        baseDomain: String = "wowsql.com",
+        baseDomain: String = "wowsqlconnect.com",
         secure: Bool = true,
         timeout: TimeInterval = 30,
         verifySsl: Bool = true,
