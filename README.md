@@ -1,6 +1,6 @@
 # WowSQL Swift SDK
 
-Official Swift package for [WowSQL](https://wowsql.com) — PostgreSQL backend-as-a-service with project auth, object storage, and schema management.
+Official Swift package for [WowSQL](https://wowsql.com) — PostgreSQL backend-as-a-service with project auth, object storage, realtime, and schema management.
 
 **Product module:** `WOWSQL` · **Swift:** 5.9+ · **Platforms:** iOS 13+, macOS 10.15+, watchOS 6+, tvOS 13+
 
@@ -17,11 +17,12 @@ Official Swift package for [WowSQL](https://wowsql.com) — PostgreSQL backend-a
 5. [Table & `QueryBuilder`](#table--querybuilder)
 6. [Authentication: `ProjectAuthClient`](#authentication-projectauthclient)
 7. [Storage: `WOWSQLStorage`](#storage-wowsqlstorage)
-8. [Schema: `WOWSQLSchema`](#schema-wowsqlschema)
-9. [Models](#models)
-10. [Errors](#errors)
-11. [Examples](#examples)
-12. [Links](#links)
+8. [Realtime](#realtime)
+9. [Schema: `WOWSQLSchema`](#schema-wowsqlschema)
+10. [Models](#models)
+11. [Errors](#errors)
+12. [Examples](#examples)
+13. [Links](#links)
 
 ---
 
@@ -33,7 +34,7 @@ Official Swift package for [WowSQL](https://wowsql.com) — PostgreSQL backend-a
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/wowsql/wowsql-swift.git", from: "1.0.0")
+    .package(url: "https://github.com/wowsql/wowsql-swift.git", from: "3.9.0")
 ],
 targets: [
     .target(name: "MyApp", dependencies: ["WOWSQL"])
@@ -50,9 +51,9 @@ Xcode: **File → Add Package Dependencies…** and enter the repository URL.
 import WOWSQL
 
 let client = WOWSQLClient(
-    projectUrl: "https://your-project.wowsql.com",
+    projectUrl: "https://your-project.wowsqlconnect.com",
     apiKey: ProcessInfo.processInfo.environment["WOWSQL_SERVICE_KEY"]!,
-    baseDomain: "wowsql.com",
+    baseDomain: "wowsqlconnect.com",
     secure: true,
     timeout: 30,
     verifySsl: true
@@ -87,7 +88,7 @@ print("count:", response.count)
 public init(
     projectUrl: String,
     apiKey: String,
-    baseDomain: String = "wowsql.com",
+    baseDomain: String = "wowsqlconnect.com",
     secure: Bool = true,
     timeout: TimeInterval = 30,
     verifySsl: Bool = true
@@ -143,7 +144,7 @@ Enums mirroring the REST API (`eq`, `neq`, …, `asc`, `desc`).
 public init(
     projectUrl: String,
     apiKey: String?,
-    baseDomain: String = "wowsql.com",
+    baseDomain: String = "wowsqlconnect.com",
     secure: Bool = true,
     timeout: TimeInterval = 30,
     verifySsl: Bool = true,
@@ -181,7 +182,7 @@ public init(
     apiKey: String,
     projectSlug: String? = nil,
     baseUrl: String? = nil,
-    baseDomain: String = "wowsql.com",
+    baseDomain: String = "wowsqlconnect.com",
     secure: Bool = true,
     timeout: TimeInterval = 60,
     verifySsl: Bool = true
@@ -212,6 +213,41 @@ public init(
 | `listTables`, `getTableSchema` | Introspection. |
 
 Typed helpers: `ColumnDefinition`, `CreateTableRequest`, `AlterTableRequest`, `SchemaResponse`, etc.
+
+---
+
+## Realtime
+
+Subscribe to INSERT / UPDATE / DELETE, broadcast ephemeral events, and track presence. Uses the **same anon or service_role key** as REST.
+
+The SDK connects to:
+
+```
+wss://<project>.wowsqlconnect.com/realtime/v1/websocket?apikey=<wowsql_anon_... or wowsql_service_...>
+```
+
+Enable a table first (`POST /realtime/v1/enable` with `schema_name` and `table_name`) before postgres changes. Channel `send` / presence do **not** need a Postgres trigger. Payloads are capped at 64 KiB. Missing key closes **4001**; invalid key closes **4003** (do not reconnect). Multi-replica deployments need `REDIS_URL`.
+
+```swift
+let unsub = client.realtime.subscribe(table: "messages") { change in
+    print(change.event, change.newRow ?? change.oldRow as Any)
+}
+
+let channel = client.realtime.channel("chat")
+channel.onBroadcast(event: "typing") { msg in
+    print(msg["payload"] as Any)
+}
+channel.onPresence { _ in
+    print(channel.presenceState())
+}
+channel.subscribe()
+channel.track(["user": "alice"])
+channel.send(event: "typing", payload: ["user": "alice"])
+
+unsub()
+channel.unsubscribe()
+client.realtime.disconnect()
+```
 
 ---
 

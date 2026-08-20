@@ -80,6 +80,16 @@ public class WOWSQLClient {
         config.timeoutIntervalForResource = timeout
         self.session = URLSession(configuration: config)
     }
+
+    private var _realtime: WowSQLRealtime?
+
+    /// Postgres changes, channel broadcast, and presence.
+    public var realtime: WowSQLRealtime {
+        if _realtime == nil {
+            _realtime = WowSQLRealtime(projectUrl: baseUrl, apiKey: apiKey)
+        }
+        return _realtime!
+    }
     
     /// Get a table interface for operations.
     public func table(_ tableName: String) -> Table {
