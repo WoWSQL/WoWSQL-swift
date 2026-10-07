@@ -267,27 +267,40 @@ public class ProjectAuthClient {
     
     // MARK: - OTP
     
-    /// Send OTP code to user's email.
+    /// Send OTP via email or phone (SMS). Provide exactly one of `email` or `phone`.
     /// Purpose: `"login"`, `"signup"`, or `"password_reset"`.
-    public func sendOtp(email: String, purpose: String = "login") async throws -> [String: Any] {
+    public func sendOtp(
+        email: String? = nil,
+        phone: String? = nil,
+        purpose: String = "login"
+    ) async throws -> [String: Any] {
         guard ["login", "signup", "password_reset"].contains(purpose) else {
             throw WOWSQLError("Purpose must be 'login', 'signup', or 'password_reset'")
         }
-        let body: [String: AnyCodable] = [
-            "email": AnyCodable(email),
+        let hasEmail = !(email ?? "").isEmpty
+        let hasPhone = !(phone ?? "").isEmpty
+        guard hasEmail != hasPhone else {
+            throw WOWSQLError("Provide exactly one of email or phone")
+        }
+        var body: [String: AnyCodable] = [
             "purpose": AnyCodable(purpose)
         ]
+        if hasEmail { body["email"] = AnyCodable(email!) }
+        if hasPhone { body["phone"] = AnyCodable(phone!) }
         let response = try await executeRequest(url: url("/otp/send"), method: "POST", body: body)
         return [
             "success": response["success"]?.value ?? true,
-            "message": response["message"]?.value ?? "If that email exists, an OTP code has been sent"
+            "message": response["message"]?.value ?? (hasPhone
+                ? "If that phone exists, an OTP code has been sent"
+                : "If that email exists, an OTP code has been sent")
         ]
     }
     
-    /// Verify OTP and complete authentication.
+    /// Verify OTP via email or phone. Provide exactly one of `email` or `phone`.
     /// Returns `AuthResponse` for login/signup, dict for password_reset.
     public func verifyOtp(
-        email: String,
+        email: String? = nil,
+        phone: String? = nil,
         otp: String,
         purpose: String = "login",
         newPassword: String? = nil
@@ -295,15 +308,21 @@ public class ProjectAuthClient {
         guard ["login", "signup", "password_reset"].contains(purpose) else {
             throw WOWSQLError("Purpose must be 'login', 'signup', or 'password_reset'")
         }
+        let hasEmail = !(email ?? "").isEmpty
+        let hasPhone = !(phone ?? "").isEmpty
+        guard hasEmail != hasPhone else {
+            throw WOWSQLError("Provide exactly one of email or phone")
+        }
         if purpose == "password_reset" && (newPassword == nil || newPassword!.isEmpty) {
             throw WOWSQLError("newPassword is required for password_reset purpose")
         }
         
         var body: [String: AnyCodable] = [
-            "email": AnyCodable(email),
             "otp": AnyCodable(otp),
             "purpose": AnyCodable(purpose)
         ]
+        if hasEmail { body["email"] = AnyCodable(email!) }
+        if hasPhone { body["phone"] = AnyCodable(phone!) }
         if let newPassword = newPassword {
             body["new_password"] = AnyCodable(newPassword)
         }
