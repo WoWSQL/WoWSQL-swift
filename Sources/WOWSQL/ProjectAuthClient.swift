@@ -87,7 +87,8 @@ public class ProjectAuthClient {
         email: String,
         password: String,
         fullName: String? = nil,
-        userMetadata: [String: Any]? = nil
+        userMetadata: [String: Any]? = nil,
+        captchaToken: String? = nil
     ) async throws -> AuthResponse {
         var body: [String: AnyCodable] = [
             "email": AnyCodable(email),
@@ -99,6 +100,7 @@ public class ProjectAuthClient {
         if let metadata = userMetadata {
             body["user_metadata"] = AnyCodable(metadata)
         }
+        applyCaptcha(&body, captchaToken)
         
         let response = try await executeRequest(url: url("/signup"), method: "POST", body: body)
         let session = try persistSession(from: response)
@@ -112,16 +114,18 @@ public class ProjectAuthClient {
             email: request.email,
             password: request.password,
             fullName: request.fullName,
-            userMetadata: request.userMetadata?.mapValues { $0.value }
+            userMetadata: request.userMetadata?.mapValues { $0.value },
+            captchaToken: request.captchaToken
         )
     }
     
     /// Sign in an existing user.
-    public func signIn(email: String, password: String) async throws -> AuthResponse {
-        let body: [String: AnyCodable] = [
+    public func signIn(email: String, password: String, captchaToken: String? = nil) async throws -> AuthResponse {
+        var body: [String: AnyCodable] = [
             "email": AnyCodable(email),
             "password": AnyCodable(password)
         ]
+        applyCaptcha(&body, captchaToken)
         let response = try await executeRequest(url: url("/login"), method: "POST", body: body)
         let session = try persistSession(from: response)
         return AuthResponse(session: session, user: nil)
@@ -129,7 +133,7 @@ public class ProjectAuthClient {
     
     /// Sign in using a request struct (backward compatibility).
     public func signIn(_ request: SignInRequest) async throws -> AuthResponse {
-        return try await signIn(email: request.email, password: request.password)
+        return try await signIn(email: request.email, password: request.password, captchaToken: request.captchaToken)
     }
     
     // MARK: - User
@@ -221,8 +225,9 @@ public class ProjectAuthClient {
     // MARK: - Password
     
     /// Request password reset.
-    public func forgotPassword(email: String) async throws -> [String: Any] {
-        let body: [String: AnyCodable] = ["email": AnyCodable(email)]
+    public func forgotPassword(email: String, captchaToken: String? = nil) async throws -> [String: Any] {
+        var body: [String: AnyCodable] = ["email": AnyCodable(email)]
+        applyCaptcha(&body, captchaToken)
         let response = try await executeRequest(url: url("/forgot-password"), method: "POST", body: body)
         return [
             "success": response["success"]?.value ?? true,
@@ -272,7 +277,8 @@ public class ProjectAuthClient {
     public func sendOtp(
         email: String? = nil,
         phone: String? = nil,
-        purpose: String = "login"
+        purpose: String = "login",
+        captchaToken: String? = nil
     ) async throws -> [String: Any] {
         guard ["login", "signup", "password_reset"].contains(purpose) else {
             throw WOWSQLError("Purpose must be 'login', 'signup', or 'password_reset'")
@@ -287,6 +293,7 @@ public class ProjectAuthClient {
         ]
         if hasEmail { body["email"] = AnyCodable(email!) }
         if hasPhone { body["phone"] = AnyCodable(phone!) }
+        applyCaptcha(&body, captchaToken)
         let response = try await executeRequest(url: url("/otp/send"), method: "POST", body: body)
         return [
             "success": response["success"]?.value ?? true,
@@ -345,14 +352,15 @@ public class ProjectAuthClient {
     
     /// Send magic link to user's email.
     /// Purpose: `"login"`, `"signup"`, or `"email_verification"`.
-    public func sendMagicLink(email: String, purpose: String = "login") async throws -> [String: Any] {
+    public func sendMagicLink(email: String, purpose: String = "login", captchaToken: String? = nil) async throws -> [String: Any] {
         guard ["login", "signup", "email_verification"].contains(purpose) else {
             throw WOWSQLError("Purpose must be 'login', 'signup', or 'email_verification'")
         }
-        let body: [String: AnyCodable] = [
+        var body: [String: AnyCodable] = [
             "email": AnyCodable(email),
             "purpose": AnyCodable(purpose)
         ]
+        applyCaptcha(&body, captchaToken)
         let response = try await executeRequest(url: url("/magic-link/send"), method: "POST", body: body)
         return [
             "success": response["success"]?.value ?? true,
@@ -373,8 +381,9 @@ public class ProjectAuthClient {
     }
     
     /// Resend verification email.
-    public func resendVerification(email: String) async throws -> [String: Any] {
-        let body: [String: AnyCodable] = ["email": AnyCodable(email)]
+    public func resendVerification(email: String, captchaToken: String? = nil) async throws -> [String: Any] {
+        var body: [String: AnyCodable] = ["email": AnyCodable(email)]
+        applyCaptcha(&body, captchaToken)
         let response = try await executeRequest(url: url("/resend-verification"), method: "POST", body: body)
         return [
             "success": response["success"]?.value ?? true,
@@ -510,6 +519,12 @@ public class ProjectAuthClient {
         }
     }
     
+    private func applyCaptcha(_ body: inout [String: AnyCodable], _ captchaToken: String?) {
+        if let token = captchaToken, !token.isEmpty {
+            body["captcha_token"] = AnyCodable(token)
+        }
+    }
+
     private func persistSession(from response: [String: AnyCodable]) throws -> AuthSession {
         guard let accessToken = response["access_token"]?.value as? String,
               let refreshToken = response["refresh_token"]?.value as? String else {

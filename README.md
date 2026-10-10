@@ -34,7 +34,7 @@ Official Swift package for [WowSQL](https://wowsql.com) — PostgreSQL backend-a
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/wowsql/wowsql-swift.git", from: "3.9.0")
+    .package(url: "https://github.com/wowsql/wowsql-swift.git", from: "3.9.2")
 ],
 targets: [
     .target(name: "MyApp", dependencies: ["WOWSQL"])
@@ -171,6 +171,22 @@ public init(
 | `logout`, `refreshToken` | Session lifecycle. |
 | `updateUser` | Profile updates. |
 | `getSession`, `setSession`, `clearSession` | Local session. |
+
+### CAPTCHA (Turnstile)
+
+Optional. Only required when Attack Protection → Turnstile is enabled. Existing calls without `captchaToken` are unchanged.
+
+```swift
+// 1. GET /auth/v1/settings → captcha.site_key
+// 2. Render Cloudflare Turnstile with that site key
+// 3. Pass the token:
+try await auth.signUp(email: "user@example.com", password: "secure-password", captchaToken: turnstileToken)
+try await auth.signIn(email: "user@example.com", password: "secure-password", captchaToken: turnstileToken)
+try await auth.forgotPassword(email: "user@example.com", captchaToken: turnstileToken)
+try await auth.sendOtp(email: "user@example.com", captchaToken: turnstileToken)
+try await auth.sendMagicLink(email: "user@example.com", captchaToken: turnstileToken)
+try await auth.resendVerification(email: "user@example.com", captchaToken: turnstileToken)
+```
 
 ---
 

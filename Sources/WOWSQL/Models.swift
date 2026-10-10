@@ -390,12 +390,14 @@ public struct SignUpRequest {
     public let password: String
     public let fullName: String?
     public let userMetadata: [String: AnyCodable]?
+    public let captchaToken: String?
     
-    public init(email: String, password: String, fullName: String? = nil, userMetadata: [String: AnyCodable]? = nil) {
+    public init(email: String, password: String, fullName: String? = nil, userMetadata: [String: AnyCodable]? = nil, captchaToken: String? = nil) {
         self.email = email
         self.password = password
         self.fullName = fullName
         self.userMetadata = userMetadata
+        self.captchaToken = captchaToken
     }
 }
 
@@ -403,10 +405,12 @@ public struct SignUpRequest {
 public struct SignInRequest {
     public let email: String
     public let password: String
+    public let captchaToken: String?
     
-    public init(email: String, password: String) {
+    public init(email: String, password: String, captchaToken: String? = nil) {
         self.email = email
         self.password = password
+        self.captchaToken = captchaToken
     }
 }
 
