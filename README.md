@@ -34,7 +34,7 @@ Official Swift package for [WowSQL](https://wowsql.com) — PostgreSQL backend-a
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/wowsql/wowsql-swift.git", from: "3.9.2")
+    .package(url: "https://github.com/wowsql/wowsql-swift.git", from: "3.9.3")
 ],
 targets: [
     .target(name: "MyApp", dependencies: ["WOWSQL"])
@@ -174,12 +174,11 @@ public init(
 
 ### CAPTCHA (Turnstile)
 
-Optional. Only required when Attack Protection → Turnstile is enabled. Existing calls without `captchaToken` are unchanged.
+Optional. Only required when dashboard **Attack Protection → Turnstile** is enabled.
+
+Create a Cloudflare Turnstile widget for **your** app domain at [dash.cloudflare.com/turnstile](https://dash.cloudflare.com/turnstile) and paste the **site key** and **secret** in Attack Protection. WoWSQL does not provide a shared widget — each project must use its own keys bound to that hostname. `GET /auth/v1/settings` returns your `captcha.site_key`. Render Turnstile with that key, then pass the token. Omit it when captcha is off — existing calls without `captchaToken` are unchanged.
 
 ```swift
-// 1. GET /auth/v1/settings → captcha.site_key
-// 2. Render Cloudflare Turnstile with that site key
-// 3. Pass the token:
 try await auth.signUp(email: "user@example.com", password: "secure-password", captchaToken: turnstileToken)
 try await auth.signIn(email: "user@example.com", password: "secure-password", captchaToken: turnstileToken)
 try await auth.forgotPassword(email: "user@example.com", captchaToken: turnstileToken)
