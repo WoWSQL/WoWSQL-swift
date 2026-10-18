@@ -127,6 +127,14 @@ public class ProjectAuthClient {
         ]
         applyCaptcha(&body, captchaToken)
         let response = try await executeRequest(url: url("/login"), method: "POST", body: body)
+        if (response["requires_2fa"]?.value as? Bool) == true {
+            return AuthResponse(
+                requires2FA: true,
+                pendingToken: (response["pending_token"]?.value as? String) ?? (response["temp_token"]?.value as? String),
+                method: response["method"]?.value as? String,
+                email: response["email"]?.value as? String
+            )
+        }
         let session = try persistSession(from: response)
         return AuthResponse(session: session, user: nil)
     }
@@ -465,6 +473,7 @@ public class ProjectAuthClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
         if let apiKey = apiKey {
+            request.setValue(apiKey, forHTTPHeaderField: "apikey")
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
         
@@ -523,6 +532,53 @@ public class ProjectAuthClient {
         if let token = captchaToken, !token.isEmpty {
             body["captcha_token"] = AnyCodable(token)
         }
+    }
+
+    public func getTwoFactorStatus(accessToken: String? = nil) async throws -> [String: AnyCodable] {
+        let token = try requireToken(accessToken)
+        return try await executeRequest(url: url("/2fa/status"), method: "GET", body: nil, extraHeaders: ["Authorization": "Bearer \(token)"])
+    }
+
+    public func setupTotp(accessToken: String? = nil) async throws -> [String: AnyCodable] {
+        let token = try requireToken(accessToken)
+        return try await executeRequest(url: url("/2fa/setup-totp"), method: "POST", body: [:], extraHeaders: ["Authorization": "Bearer \(token)"])
+    }
+
+    public func enableTotp(code: String, accessToken: String? = nil) async throws -> [String: AnyCodable] {
+        let token = try requireToken(accessToken)
+        return try await executeRequest(url: url("/2fa/verify-and-enable"), method: "POST", body: ["code": AnyCodable(code), "method": AnyCodable("totp")], extraHeaders: ["Authorization": "Bearer \(token)"])
+    }
+
+    public func disableTotp(code: String? = nil, backupCode: String? = nil, accessToken: String? = nil) async throws -> [String: AnyCodable] {
+        let token = try requireToken(accessToken)
+        var body: [String: AnyCodable] = ["method": AnyCodable("totp")]
+        if let code = code { body["code"] = AnyCodable(code) }
+        if let backupCode = backupCode { body["backup_code"] = AnyCodable(backupCode) }
+        return try await executeRequest(url: url("/2fa/disable"), method: "POST", body: body, extraHeaders: ["Authorization": "Bearer \(token)"])
+    }
+
+    public func regenerateRecoveryCodes(code: String, accessToken: String? = nil) async throws -> [String: AnyCodable] {
+        let token = try requireToken(accessToken)
+        return try await executeRequest(url: url("/2fa/recovery-codes"), method: "POST", body: ["code": AnyCodable(code), "method": AnyCodable("totp")], extraHeaders: ["Authorization": "Bearer \(token)"])
+    }
+
+    public func verifyTwoFactorLogin(pendingToken: String, code: String? = nil, backupCode: String? = nil) async throws -> AuthResponse {
+        var body: [String: AnyCodable] = [
+            "pending_token": AnyCodable(pendingToken),
+            "temp_token": AnyCodable(pendingToken)
+        ]
+        if let code = code { body["code"] = AnyCodable(code) }
+        if let backupCode = backupCode { body["backup_code"] = AnyCodable(backupCode) }
+        let response = try await executeRequest(url: url("/2fa/verify-login"), method: "POST", body: body)
+        let session = try persistSession(from: response)
+        return AuthResponse(session: session)
+    }
+
+    private func requireToken(_ accessToken: String?) throws -> String {
+        if let token = accessToken ?? _accessToken ?? storage.getAccessToken() {
+            return token
+        }
+        throw AuthenticationError("Access token is required")
     }
 
     private func persistSession(from response: [String: AnyCodable]) throws -> AuthSession {

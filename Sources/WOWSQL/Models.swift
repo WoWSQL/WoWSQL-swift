@@ -117,6 +117,7 @@ public enum FilterOperator: String, Codable {
     case lt = "lt"
     case lte = "lte"
     case like = "like"
+    case ilike = "ilike"
     case isNull = "is"
     case `in` = "in"
     case notIn = "not_in"
@@ -259,12 +260,20 @@ public struct AuthSession: Codable {
 
 /// Authentication response (session + optional user)
 public struct AuthResponse {
-    public let session: AuthSession
+    public let session: AuthSession?
     public let user: AuthUser?
-    
-    public init(session: AuthSession, user: AuthUser? = nil) {
+    public let requires2FA: Bool
+    public let pendingToken: String?
+    public let method: String?
+    public let email: String?
+
+    public init(session: AuthSession? = nil, user: AuthUser? = nil, requires2FA: Bool = false, pendingToken: String? = nil, method: String? = nil, email: String? = nil) {
         self.session = session
         self.user = user
+        self.requires2FA = requires2FA
+        self.pendingToken = pendingToken
+        self.method = method
+        self.email = email
     }
 }
 

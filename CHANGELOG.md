@@ -5,6 +5,18 @@ All notable changes to the WowSQL Swift SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.10.0] - 2026-10-18
+
+### Fixed
+- Send `apikey` on database, auth, and storage calls (Bearer-only keys were 401 on project hosts).
+- Session refresh uses `POST /refresh-token`.
+- Storage public URLs use `/storage/v1/object/public/{bucket}/{path}`.
+- Upload folder is the `folder` query parameter.
+- Login replies with `requires_2fa` no longer store empty sessions.
+
+### Added
+- TOTP 2FA: status, setup, enable, disable, recovery codes, and `verifyTwoFactorLogin`.
+
 ## [3.9.3] - 2026-10-10
 
 ### Docs - CAPTCHA bring-your-own widget

@@ -281,6 +281,7 @@ public class WOWSQLSchema {
     private func buildRequest(url: URL, method: String) throws -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = method
+        request.setValue(serviceKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(serviceKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         return request

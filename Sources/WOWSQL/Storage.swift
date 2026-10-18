@@ -175,6 +175,7 @@ public class WOWSQLStorage {
         let url = URL(string: urlString)!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.setValue(apiKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         
         let boundary = UUID().uuidString
@@ -278,7 +279,7 @@ public class WOWSQLStorage {
     
     /// Get the public URL for a file in a public bucket.
     public func getPublicUrl(bucketName: String, filePath: String) -> String {
-        return "\(baseUrl)/api/v1/storage/projects/\(projectSlug)/files/\(bucketName)/\(filePath)"
+        return "\(baseUrl)/storage/v1/object/public/\(bucketName)/\(filePath)"
     }
     
     /// Get storage statistics for the project.
@@ -311,6 +312,7 @@ public class WOWSQLStorage {
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(apiKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         return request
     }

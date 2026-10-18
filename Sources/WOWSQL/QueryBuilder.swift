@@ -95,6 +95,12 @@ public class QueryBuilder {
     }
 
     @discardableResult
+    public func ilike(_ column: String, _ pattern: String) -> QueryBuilder {
+        filters.append(FilterExpression(column: column, operator: .ilike, value: AnyCodable(pattern), logicalOp: "AND"))
+        return self
+    }
+
+    @discardableResult
     public func isNull(_ column: String) -> QueryBuilder {
         filters.append(FilterExpression(column: column, operator: .isNull, value: nil, logicalOp: "AND"))
         return self

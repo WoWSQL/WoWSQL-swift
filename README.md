@@ -34,7 +34,7 @@ Official Swift package for [WowSQL](https://wowsql.com) — PostgreSQL backend-a
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/wowsql/wowsql-swift.git", from: "3.9.3")
+    .package(url: "https://github.com/wowsql/wowsql-swift.git", from: "3.10.0")
 ],
 targets: [
     .target(name: "MyApp", dependencies: ["WOWSQL"])
